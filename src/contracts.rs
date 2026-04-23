@@ -10,9 +10,11 @@ use crate::contract_authorization::build_static_authorization;
 use crate::contract_error_responses::infer_framework_error_responses;
 use crate::contract_inertia::infer_inertia_response;
 use crate::contract_query_builder::extend_query_builder_request;
+use crate::deadcode_model::{Finding, SymbolRecord};
 use crate::manifest::Manifest;
 use crate::model::{ControllerMethod, ModelFacts, ModelRelationshipFact, ResourceUsageFact};
 use crate::pipeline::PipelineResult;
+use crate::reachability::analyze_controller_reachability;
 use crate::source_index::{
     SourceClass, SourceIndex, extract_balanced_region, extract_return_array, split_top_level,
     split_top_level_key_value, strip_php_string,
@@ -42,12 +44,6 @@ pub struct Entrypoint {
     pub symbol: String,
     pub source: String,
 }
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-pub struct SymbolRecord {}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-pub struct Finding {}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct RemovalPlan {
@@ -545,6 +541,8 @@ pub fn build_deadcode_response(
     request: &AnalysisRequest,
     result: &PipelineResult,
 ) -> DeadCodeResponse {
+    let reachability = analyze_controller_reachability(request, result);
+
     DeadCodeResponse {
         contract_version: CONTRACT_VERSION.to_string(),
         request_id: request.request_id.clone(),
@@ -558,12 +556,10 @@ pub fn build_deadcode_response(
             cache_hits: result.cache_hits,
             cache_misses: result.cache_misses,
         },
-        entrypoints: Vec::new(),
-        symbols: Vec::new(),
-        findings: Vec::new(),
-        removal_plan: RemovalPlan {
-            change_sets: Vec::new(),
-        },
+        entrypoints: reachability.entrypoints,
+        symbols: reachability.symbols,
+        findings: reachability.findings,
+        removal_plan: reachability.removal_plan,
     }
 }
 

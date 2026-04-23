@@ -28,6 +28,19 @@ pub struct PipelineResult {
     pub cache_misses: usize,
 }
 
+impl PipelineResult {
+    pub fn controller_methods(
+        &self,
+    ) -> impl Iterator<Item = (&AnalyzedFile, &crate::model::ControllerMethod)> {
+        self.files.iter().flat_map(|file| {
+            file.facts
+                .controllers
+                .iter()
+                .map(move |controller| (file, controller))
+        })
+    }
+}
+
 pub fn run_pipeline(manifest: &Manifest) -> Result<Delta> {
     Ok(build_delta(analyze_project(manifest)?))
 }
