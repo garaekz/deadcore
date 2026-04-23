@@ -218,7 +218,8 @@ fn extract_class_methods(class_node: Node, source: &[u8]) -> Vec<MethodInfo> {
             let name = extract_named_child_text(member, source, "name")
                 .unwrap_or_else(|| "anonymous".to_string());
             let text = node_text(member, source);
-            let is_public = text.contains("public function");
+            let is_public =
+                text.contains("public function") || text.contains("public static function");
 
             methods.push(MethodInfo {
                 name,

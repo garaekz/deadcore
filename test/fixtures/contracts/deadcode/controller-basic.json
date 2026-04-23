@@ -26,6 +26,23 @@
     },
     "routes": [
       {
+        "routeId": "entry.index",
+        "methods": ["GET", "HEAD"],
+        "uri": "api/entry",
+        "domain": null,
+        "name": "entry.index",
+        "prefix": "api",
+        "middleware": ["api"],
+        "where": {},
+        "defaults": {},
+        "bindings": [],
+        "action": {
+          "kind": "controller_method",
+          "fqcn": "App\\Http\\Controllers\\EntryController",
+          "method": "index"
+        }
+      },
+      {
         "routeId": "users.index",
         "methods": ["GET", "HEAD"],
         "uri": "api/users",
