@@ -11,6 +11,13 @@ final class HelperController
         ], 200);
     }
 
+    public function reachableInstanceHelper()
+    {
+        return response()->json([
+            'helper_instance' => true,
+        ], 200);
+    }
+
     public static function unusedHelper()
     {
         return response()->json([

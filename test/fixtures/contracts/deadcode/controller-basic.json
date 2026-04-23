@@ -26,6 +26,23 @@
     },
     "routes": [
       {
+        "routeId": "object-entry.index",
+        "methods": ["GET", "HEAD"],
+        "uri": "api/object-entry",
+        "domain": null,
+        "name": "object-entry.index",
+        "prefix": "api",
+        "middleware": ["api"],
+        "where": {},
+        "defaults": {},
+        "bindings": [],
+        "action": {
+          "kind": "controller_method",
+          "fqcn": "App\\Http\\Controllers\\ObjectEntryController",
+          "method": "index"
+        }
+      },
+      {
         "routeId": "entry.index",
         "methods": ["GET", "HEAD"],
         "uri": "api/entry",

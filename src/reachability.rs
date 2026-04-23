@@ -195,15 +195,31 @@ fn collect_controller_callees(
             continue;
         };
 
-        let called_class = class_name.as_str().trim_start_matches('\\');
         let resolved_class =
-            if called_class == controller.class_name || called_class == controller.fqcn {
-                controller.fqcn.clone()
-            } else if let Some(source_class) = source_class {
-                source_class.resolve_name(called_class)
-            } else {
-                called_class.to_string()
-            };
+            resolve_called_controller(controller, source_class, class_name.as_str());
+
+        register_controller_callee(
+            &mut callees,
+            methods_by_controller,
+            &resolved_class,
+            method_name.as_str(),
+        );
+    }
+
+    let instance_call_re = Regex::new(
+        r#"\(?\s*new\s+([A-Za-z_\\][A-Za-z0-9_\\]*)\s*\([^)]*\)\s*\)?->\s*([A-Za-z_][A-Za-z0-9_]*)\s*\("#,
+    )
+    .expect("instance call regex");
+    for captures in instance_call_re.captures_iter(&controller.body_text) {
+        let Some(class_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(method_name) = captures.get(2) else {
+            continue;
+        };
+
+        let resolved_class =
+            resolve_called_controller(controller, source_class, class_name.as_str());
 
         register_controller_callee(
             &mut callees,
@@ -221,6 +237,21 @@ fn collect_controller_callees(
         }
     }
     callees
+}
+
+fn resolve_called_controller(
+    controller: &ControllerMethod,
+    source_class: Option<&SourceClass>,
+    class_name: &str,
+) -> String {
+    let called_class = class_name.trim_start_matches('\\');
+    if called_class == controller.class_name || called_class == controller.fqcn {
+        controller.fqcn.clone()
+    } else if let Some(source_class) = source_class {
+        source_class.resolve_name(called_class)
+    } else {
+        called_class.to_string()
+    }
 }
 
 fn register_controller_callee(
