@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use oxinfer::routes::extract_route_bindings;
+use deadcore::routes::extract_route_bindings;
 
 fn read_fixture(path: &str) -> String {
     fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(path))

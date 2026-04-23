@@ -205,7 +205,7 @@ impl CacheKind {
 }
 
 fn resolve_cache_dir(project_root: &Path) -> PathBuf {
-    if let Ok(override_dir) = std::env::var("OXINFER_CACHE_DIR") {
+    if let Ok(override_dir) = std::env::var("DEADCORE_CACHE_DIR") {
         let trimmed = override_dir.trim();
         if !trimmed.is_empty() {
             return PathBuf::from(trimmed);
@@ -213,7 +213,7 @@ fn resolve_cache_dir(project_root: &Path) -> PathBuf {
     }
 
     project_root
-        .join(".oxinfer")
+        .join(".deadcore")
         .join("cache")
         .join(CACHE_SCHEMA_VERSION)
 }

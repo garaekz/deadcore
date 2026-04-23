@@ -4,18 +4,17 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::{Parser, ValueEnum};
-use oxinfer::OXINFER_VERSION;
-use oxinfer::contracts::{build_analysis_response, load_analysis_request_from_slice};
-use oxinfer::manifest::Manifest;
-use oxinfer::model::Delta;
-use oxinfer::output::build_delta;
-use oxinfer::pipeline::{PipelineResult, analyze_project};
+use deadcore::DEADCORE_VERSION;
+use deadcore::contracts::{build_deadcode_response, load_analysis_request_from_slice};
+use deadcore::manifest::Manifest;
+use deadcore::output::build_report;
+use deadcore::pipeline::{PipelineResult, analyze_project};
 use sha2::{Digest, Sha256};
 
 #[derive(Debug, Parser)]
-#[command(name = "oxinfer")]
-#[command(version = OXINFER_VERSION)]
-#[command(about = "Static Laravel analyzer")]
+#[command(name = "deadcore")]
+#[command(version = DEADCORE_VERSION)]
+#[command(about = "Rust analysis core for Laravel dead code detection")]
 struct Args {
     #[arg(long, conflicts_with = "request")]
     manifest: Option<PathBuf>,
@@ -40,9 +39,6 @@ struct Args {
 
     #[arg(long = "print-hash")]
     print_hash: bool,
-
-    #[arg(long)]
-    stamp: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -164,14 +160,11 @@ fn execute_manifest_mode(manifest_path: &Path, args: &Args) -> Result<(), CliErr
     let result = analyze_project(&manifest)
         .map_err(|err| CliError::internal("failed to run rust pipeline", err.to_string()))?;
     log_pipeline_summary(args, &manifest, &result);
-    let mut delta = build_delta(result);
-    if args.stamp {
-        delta.meta.generated_at = Some(current_timestamp());
-    }
-    let payload = serde_json::to_string_pretty(&delta)
-        .map_err(|err| CliError::internal("failed to encode delta JSON", err.to_string()))?;
+    let report = build_report(result);
+    let payload = serde_json::to_string_pretty(&report)
+        .map_err(|err| CliError::internal("failed to encode report JSON", err.to_string()))?;
     if args.print_hash {
-        eprintln!("canonical_sha256={}", canonical_delta_sha256(&delta)?);
+        eprintln!("canonical_sha256={}", sha256_hex(payload.as_bytes()));
     }
     emit_output(&args.out, &payload)
 }
@@ -189,9 +182,9 @@ fn execute_request_mode(request_path: &Path, args: &Args) -> Result<(), CliError
     let result = analyze_project(&request.manifest)
         .map_err(|err| CliError::internal("failed to run rust pipeline", err.to_string()))?;
     log_pipeline_summary(args, &request.manifest, &result);
-    let response = build_analysis_response(&request, &result);
+    let response = build_deadcode_response(&request, &result);
     let payload = serde_json::to_string(&response)
-        .map_err(|err| CliError::internal("failed to encode analysis response", err.to_string()))?;
+        .map_err(|err| CliError::internal("failed to encode deadcode response", err.to_string()))?;
     if args.print_hash {
         eprintln!("canonical_sha256={}", sha256_hex(payload.as_bytes()));
     }
@@ -267,7 +260,7 @@ fn apply_cache_dir_override(cache_dir: Option<&Path>) {
     if let Some(cache_dir) = cache_dir {
         // This CLI mutates the process environment before worker threads are spawned.
         unsafe {
-            std::env::set_var("OXINFER_CACHE_DIR", cache_dir);
+            std::env::set_var("DEADCORE_CACHE_DIR", cache_dir);
         }
     }
 }
@@ -322,13 +315,13 @@ fn log_pipeline_summary(args: &Args, manifest: &Manifest, result: &PipelineResul
 
     if should_log(args.log_level, LogLevel::Debug) && manifest.cache.enabled {
         let cache_dir = args.cache_dir.clone().unwrap_or_else(|| {
-            std::env::var("OXINFER_CACHE_DIR")
+            std::env::var("DEADCORE_CACHE_DIR")
                 .map(PathBuf::from)
                 .unwrap_or_else(|_| {
                     manifest
                         .project
                         .root
-                        .join(".oxinfer")
+                        .join(".deadcore")
                         .join("cache")
                         .join("v3")
                 })
@@ -378,48 +371,6 @@ fn log_message(args: &Args, level: LogLevel, message: &str) {
         LogLevel::Debug => "90",
     };
     eprintln!("\u{1b}[{color}m{label}:\u{1b}[0m {message}");
-}
-
-fn current_timestamp() -> String {
-    let seconds = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    format_rfc3339(seconds)
-}
-
-fn format_rfc3339(unix_seconds: u64) -> String {
-    let days = unix_seconds / 86_400;
-    let seconds_of_day = unix_seconds % 86_400;
-    let hour = seconds_of_day / 3_600;
-    let minute = (seconds_of_day % 3_600) / 60;
-    let second = seconds_of_day % 60;
-    let (year, month, day) = civil_from_days(days as i64);
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
-}
-
-fn civil_from_days(days_since_epoch: i64) -> (i32, u32, u32) {
-    let z = days_since_epoch + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = mp + if mp < 10 { 3 } else { -9 };
-    let year = y + if month <= 2 { 1 } else { 0 };
-    (year as i32, month as u32, day as u32)
-}
-
-fn canonical_delta_sha256(delta: &Delta) -> Result<String, CliError> {
-    let mut canonical = delta.clone();
-    canonical.meta.generated_at = None;
-    canonical.meta.stats.duration_ms = 0;
-    let bytes = serde_json::to_vec(&canonical).map_err(|err| {
-        CliError::internal("failed to encode canonical delta JSON", err.to_string())
-    })?;
-    Ok(sha256_hex(&bytes))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

@@ -1,11 +1,28 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::contracts::{DeadCodeReport, RemovalPlan, ReportMeta};
 use crate::model::{
     BroadcastOut, BroadcastParameterOut, ControllerMethodOut, ControllerOut, Delta, DeltaMeta,
     ModelOut, ModelRelationshipOut, PivotOut, PolymorphicOut, PolymorphicRelationOut,
     RequestUsageOut, ResourceUsageOut, ScopeUsedOut, StatsOut,
 };
 use crate::pipeline::PipelineResult;
+
+pub fn build_report(result: PipelineResult) -> DeadCodeReport {
+    DeadCodeReport {
+        meta: ReportMeta {
+            duration_ms: result.duration_ms,
+            cache_hits: result.cache_hits,
+            cache_misses: result.cache_misses,
+        },
+        entrypoints: Vec::new(),
+        symbols: Vec::new(),
+        findings: Vec::new(),
+        removal_plan: RemovalPlan {
+            change_sets: Vec::new(),
+        },
+    }
+}
 
 pub fn build_delta(result: PipelineResult) -> Delta {
     let scope_owners = collect_scope_owners(&result);

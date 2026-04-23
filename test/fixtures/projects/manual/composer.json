@@ -1,7 +1,7 @@
 {
   "name": "test/laravel-project",
   "type": "project",
-  "description": "Test Laravel project for Oxinfer testing",
+  "description": "Test Laravel project for deadcore testing",
   "autoload": {
     "psr-4": {
       "App\\": "app/",

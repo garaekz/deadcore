@@ -1,6 +1,6 @@
 # Laravel Query Scope Test Fixtures
 
-This directory contains PHP test fixtures for validating the ScopeMatcher implementation in the Oxinfer project. These files demonstrate various Laravel query scope patterns that the matcher should detect and extract.
+This directory contains PHP test fixtures for validating the ScopeMatcher implementation in the deadcore project. These files demonstrate various Laravel query scope patterns that the matcher should detect and extract.
 
 ## Test Files Overview
 

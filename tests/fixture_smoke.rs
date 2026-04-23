@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use oxinfer::manifest::Manifest;
-use oxinfer::pipeline::run_pipeline;
+use deadcore::manifest::Manifest;
+use deadcore::pipeline::run_pipeline;
 
 fn load_manifest(path: &Path) -> Manifest {
     let text = fs::read_to_string(path).expect("fixture manifest should exist");

@@ -1,7 +1,12 @@
 [package]
-name = "oxinfer"
+name = "deadcore"
 version = "0.1.4"
 edition = "2024"
+description = "Rust analysis core for Laravel dead code detection"
+
+[[bin]]
+name = "deadcore"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"

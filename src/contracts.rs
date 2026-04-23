@@ -6,7 +6,6 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::OXINFER_VERSION;
 use crate::contract_authorization::build_static_authorization;
 use crate::contract_error_responses::infer_framework_error_responses;
 use crate::contract_inertia::infer_inertia_response;
@@ -19,33 +18,75 @@ use crate::source_index::{
     split_top_level_key_value, strip_php_string,
 };
 
-pub const CONTRACT_VERSION: &str = "oxcribe.oxinfer.v2";
+pub const CONTRACT_VERSION: &str = "deadcode.analysis.v1";
 const ACTION_KIND_CONTROLLER_METHOD: &str = "controller_method";
 const ACTION_KIND_INVOKABLE_CONTROLLER: &str = "invokable_controller";
-const ACTION_KIND_CLOSURE: &str = "closure";
-const RESPONSE_STATUS_OK: &str = "ok";
-const RESPONSE_STATUS_PARTIAL: &str = "partial";
 
-const MATCH_STATUS_MATCHED: &str = "matched";
-const MATCH_STATUS_RUNTIME_ONLY: &str = "runtime_only";
-const MATCH_STATUS_UNSUPPORTED: &str = "unsupported";
-const MATCH_STATUS_MISSING_STATIC: &str = "missing_static";
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeadCodeMeta {
+    pub duration_ms: u128,
+    pub cache_hits: usize,
+    pub cache_misses: usize,
+}
 
-const SEVERITY_INFO: &str = "info";
-const SEVERITY_WARN: &str = "warn";
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReportMeta {
+    pub duration_ms: u128,
+    pub cache_hits: usize,
+    pub cache_misses: usize,
+}
 
-const SCOPE_ROUTE: &str = "route";
-const SCOPE_ACTION: &str = "action";
-const SCOPE_GLOBAL: &str = "global";
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Entrypoint {
+    pub kind: String,
+    pub symbol: String,
+    pub source: String,
+}
 
-const REASON_CODE_CLOSURE_ACTION: &str = "closure_action";
-const REASON_CODE_UNKNOWN_ACTION: &str = "unknown_action";
-const REASON_CODE_MISSING_STATIC_ACTION: &str = "missing_static_action";
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct SymbolRecord {}
 
-const DIAGNOSTIC_CODE_ROUTE_RUNTIME_ONLY_CLOSURE: &str = "route.runtime_only.closure";
-const DIAGNOSTIC_CODE_ROUTE_ACTION_UNSUPPORTED: &str = "route.action.unsupported";
-const DIAGNOSTIC_CODE_ROUTE_ACTION_MISSING_STATIC: &str = "route.action.missing_static";
-const DIAGNOSTIC_CODE_ANALYSIS_STATIC_PARTIAL: &str = "analysis.static.partial";
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct Finding {}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RemovalPlan {
+    #[serde(rename = "changeSets")]
+    pub change_sets: Vec<RemovalChangeSet>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RemovalChangeSet {
+    pub file: String,
+    pub symbol: String,
+    pub start_line: usize,
+    pub end_line: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeadCodeReport {
+    pub meta: ReportMeta,
+    pub entrypoints: Vec<Entrypoint>,
+    pub symbols: Vec<SymbolRecord>,
+    pub findings: Vec<Finding>,
+    #[serde(rename = "removalPlan")]
+    pub removal_plan: RemovalPlan,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DeadCodeResponse {
+    #[serde(rename = "contractVersion")]
+    pub contract_version: String,
+    #[serde(rename = "requestId")]
+    pub request_id: String,
+    pub status: String,
+    pub meta: DeadCodeMeta,
+    pub entrypoints: Vec<Entrypoint>,
+    pub symbols: Vec<SymbolRecord>,
+    pub findings: Vec<Finding>,
+    #[serde(rename = "removalPlan")]
+    pub removal_plan: RemovalPlan,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -129,104 +170,6 @@ pub struct RouteAction {
     pub kind: String,
     pub fqcn: Option<String>,
     pub method: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AnalysisResponse {
-    #[serde(rename = "contractVersion")]
-    pub contract_version: String,
-    #[serde(rename = "requestId")]
-    pub request_id: String,
-    #[serde(rename = "runtimeFingerprint")]
-    pub runtime_fingerprint: String,
-    pub status: String,
-    pub meta: ResponseMeta,
-    pub delta: ContractDelta,
-    #[serde(rename = "routeMatches")]
-    pub route_matches: Vec<RouteMatch>,
-    pub diagnostics: Vec<Diagnostic>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ResponseMeta {
-    #[serde(rename = "oxinferVersion")]
-    pub oxinfer_version: String,
-    pub partial: bool,
-    pub stats: ContractStats,
-    #[serde(rename = "diagnosticCounts")]
-    pub diagnostic_counts: DiagnosticCounts,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct DiagnosticCounts {
-    pub info: usize,
-    pub warn: usize,
-    pub error: usize,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct RouteMatch {
-    #[serde(rename = "routeId")]
-    pub route_id: String,
-    #[serde(rename = "actionKind")]
-    pub action_kind: String,
-    #[serde(rename = "actionKey", skip_serializing_if = "Option::is_none")]
-    pub action_key: Option<String>,
-    #[serde(rename = "matchStatus")]
-    pub match_status: String,
-    #[serde(rename = "reasonCode", skip_serializing_if = "Option::is_none")]
-    pub reason_code: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct Diagnostic {
-    pub code: String,
-    pub severity: String,
-    pub scope: String,
-    pub message: String,
-    #[serde(rename = "routeId", skip_serializing_if = "Option::is_none")]
-    pub route_id: Option<String>,
-    #[serde(rename = "actionKey", skip_serializing_if = "Option::is_none")]
-    pub action_key: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ContractDelta {
-    pub meta: ContractDeltaMeta,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub controllers: Vec<ContractController>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub models: Vec<ContractModel>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub resources: Vec<ContractResource>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub polymorphic: Vec<ContractPolymorphicGroup>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub broadcast: Vec<ContractBroadcast>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ContractDeltaMeta {
-    pub partial: bool,
-    pub stats: ContractStats,
-    pub version: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ContractStats {
-    #[serde(rename = "filesParsed")]
-    pub files_parsed: usize,
-    pub skipped: usize,
-    #[serde(rename = "durationMs")]
-    pub duration_ms: u128,
-    #[serde(rename = "assemblerStats")]
-    pub assembler_stats: AssemblerStats,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AssemblerStats {
-    #[serde(rename = "unresolvableMatches")]
-    pub unresolvable_matches: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -598,153 +541,29 @@ pub fn load_analysis_request_from_slice(
     Ok(request)
 }
 
-pub fn build_analysis_response(
+pub fn build_deadcode_response(
     request: &AnalysisRequest,
     result: &PipelineResult,
-) -> AnalysisResponse {
-    let source_index = SourceIndex::build(result);
-    let runtime_routes = collect_runtime_routes_by_action(request);
-    let static_actions = collect_static_controllers(result, &source_index, &runtime_routes);
-    let models = collect_models(result, &source_index);
-    let resources = collect_resources(result, &source_index);
-    let polymorphic = collect_top_level_polymorphic(result);
-    let broadcast = collect_broadcast(result);
-
-    let mut route_matches = Vec::with_capacity(request.runtime.routes.len());
-    let mut diagnostics = Vec::new();
-    let mut matched_action_keys = BTreeSet::new();
-    let mut partial = result.partial;
-
-    if result.partial {
-        diagnostics.push(Diagnostic {
-            code: DIAGNOSTIC_CODE_ANALYSIS_STATIC_PARTIAL.to_string(),
-            severity: SEVERITY_WARN.to_string(),
-            scope: SCOPE_GLOBAL.to_string(),
-            message: "static analysis completed with partial results before the runtime join"
-                .to_string(),
-            route_id: None,
-            action_key: None,
-        });
-    }
-
-    for route in &request.runtime.routes {
-        let mut route_match = RouteMatch {
-            route_id: route.route_id.clone(),
-            action_kind: route.action.kind.clone(),
-            action_key: None,
-            match_status: MATCH_STATUS_UNSUPPORTED.to_string(),
-            reason_code: Some(REASON_CODE_UNKNOWN_ACTION.to_string()),
-        };
-
-        match route.action.kind.as_str() {
-            ACTION_KIND_CONTROLLER_METHOD | ACTION_KIND_INVOKABLE_CONTROLLER => {
-                if let Some(action_key) = route.action.action_key() {
-                    route_match.action_key = Some(action_key.clone());
-                    if static_actions.contains_key(&action_key) {
-                        route_match.match_status = MATCH_STATUS_MATCHED.to_string();
-                        route_match.reason_code = None;
-                        matched_action_keys.insert(action_key);
-                    } else {
-                        route_match.match_status = MATCH_STATUS_MISSING_STATIC.to_string();
-                        route_match.reason_code =
-                            Some(REASON_CODE_MISSING_STATIC_ACTION.to_string());
-                        diagnostics.push(Diagnostic {
-                            code: DIAGNOSTIC_CODE_ROUTE_ACTION_MISSING_STATIC.to_string(),
-                            severity: SEVERITY_WARN.to_string(),
-                            scope: SCOPE_ACTION.to_string(),
-                            message:
-                                "runtime route action has no matching static controller analysis"
-                                    .to_string(),
-                            route_id: Some(route.route_id.clone()),
-                            action_key: route_match.action_key.clone(),
-                        });
-                        partial = true;
-                    }
-                } else {
-                    diagnostics.push(Diagnostic {
-                        code: DIAGNOSTIC_CODE_ROUTE_ACTION_UNSUPPORTED.to_string(),
-                        severity: SEVERITY_WARN.to_string(),
-                        scope: SCOPE_ROUTE.to_string(),
-                        message: "runtime route action is invalid for static join".to_string(),
-                        route_id: Some(route.route_id.clone()),
-                        action_key: None,
-                    });
-                    partial = true;
-                }
-            }
-            ACTION_KIND_CLOSURE => {
-                route_match.match_status = MATCH_STATUS_RUNTIME_ONLY.to_string();
-                route_match.reason_code = Some(REASON_CODE_CLOSURE_ACTION.to_string());
-                diagnostics.push(Diagnostic {
-                    code: DIAGNOSTIC_CODE_ROUTE_RUNTIME_ONLY_CLOSURE.to_string(),
-                    severity: SEVERITY_INFO.to_string(),
-                    scope: SCOPE_ROUTE.to_string(),
-                    message:
-                        "runtime route uses a closure action and is runtime-only in contract v2"
-                            .to_string(),
-                    route_id: Some(route.route_id.clone()),
-                    action_key: None,
-                });
-                partial = true;
-            }
-            _ => {
-                diagnostics.push(Diagnostic {
-                    code: DIAGNOSTIC_CODE_ROUTE_ACTION_UNSUPPORTED.to_string(),
-                    severity: SEVERITY_WARN.to_string(),
-                    scope: SCOPE_ROUTE.to_string(),
-                    message: "runtime route action kind is unsupported in contract v2".to_string(),
-                    route_id: Some(route.route_id.clone()),
-                    action_key: None,
-                });
-                partial = true;
-            }
-        }
-
-        if route_match.match_status != MATCH_STATUS_MATCHED {
-            partial = true;
-        }
-        route_matches.push(route_match);
-    }
-
-    let mut controllers = matched_action_keys
-        .into_iter()
-        .filter_map(|key| static_actions.get(&key).cloned())
-        .collect::<Vec<_>>();
-    controllers.sort_by(|a, b| (&a.fqcn, &a.method).cmp(&(&b.fqcn, &b.method)));
-
-    let diagnostic_counts = count_diagnostics(&diagnostics);
-    let status = if partial {
-        RESPONSE_STATUS_PARTIAL
-    } else {
-        RESPONSE_STATUS_OK
-    };
-
-    let stats = contract_stats(result);
-    AnalysisResponse {
+) -> DeadCodeResponse {
+    DeadCodeResponse {
         contract_version: CONTRACT_VERSION.to_string(),
         request_id: request.request_id.clone(),
-        runtime_fingerprint: request.runtime_fingerprint.clone(),
-        status: status.to_string(),
-        meta: ResponseMeta {
-            oxinfer_version: OXINFER_VERSION.to_string(),
-            partial,
-            stats: stats.clone(),
-            diagnostic_counts,
+        status: if result.partial {
+            "partial".to_string()
+        } else {
+            "ok".to_string()
         },
-        delta: ContractDelta {
-            meta: ContractDeltaMeta {
-                partial: result.partial,
-                stats,
-                version: OXINFER_VERSION.to_string(),
-            },
-            controllers,
-            models,
-            resources,
-            polymorphic,
-            broadcast,
+        meta: DeadCodeMeta {
+            duration_ms: result.duration_ms,
+            cache_hits: result.cache_hits,
+            cache_misses: result.cache_misses,
         },
-        route_matches,
-        diagnostics,
+        entrypoints: Vec::new(),
+        symbols: Vec::new(),
+        findings: Vec::new(),
+        removal_plan: RemovalPlan {
+            change_sets: Vec::new(),
+        },
     }
 }
 
@@ -1858,35 +1677,6 @@ fn collect_broadcast(result: &PipelineResult) -> Vec<ContractBroadcast> {
 
     items.sort_by(|a, b| (&a.channel, &a.file).cmp(&(&b.channel, &b.file)));
     items
-}
-
-fn count_diagnostics(diagnostics: &[Diagnostic]) -> DiagnosticCounts {
-    let mut counts = DiagnosticCounts {
-        info: 0,
-        warn: 0,
-        error: 0,
-    };
-
-    for diagnostic in diagnostics {
-        match diagnostic.severity.as_str() {
-            SEVERITY_INFO => counts.info += 1,
-            SEVERITY_WARN => counts.warn += 1,
-            _ => counts.error += 1,
-        }
-    }
-
-    counts
-}
-
-fn contract_stats(result: &PipelineResult) -> ContractStats {
-    ContractStats {
-        files_parsed: result.files.len(),
-        skipped: 0,
-        duration_ms: 0,
-        assembler_stats: AssemblerStats {
-            unresolvable_matches: 0,
-        },
-    }
 }
 
 fn collect_runtime_routes_by_action(
