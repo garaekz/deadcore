@@ -63,3 +63,51 @@ fn reports_unused_controller_method_when_not_reachable_from_runtime_or_static_ca
         payload
     );
 }
+
+#[test]
+fn does_not_report_same_controller_callee_when_reachable_from_routed_method() {
+    let request = std::fs::read(fixture_path(
+        "test/fixtures/contracts/deadcode/controller-basic.json",
+    ))
+    .expect("request fixture should exist");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_deadcore"))
+        .args(["--request", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn deadcore");
+
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be piped")
+        .write_all(&request)
+        .expect("failed to write request fixture");
+
+    let output = child
+        .wait_with_output()
+        .expect("failed to wait for deadcore");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid json");
+    assert_eq!(payload["status"], "ok");
+
+    let findings = payload["findings"]
+        .as_array()
+        .expect("findings should be an array");
+
+    assert!(
+        !findings.iter().any(|finding| {
+            finding["symbol"] == "App\\Http\\Controllers\\UserController::reachableThroughIndex"
+        }),
+        "same-controller callee should stay reachable, payload: {}",
+        payload
+    );
+}

@@ -1,10 +1,13 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+use regex::Regex;
 
 use crate::contracts::{AnalysisRequest, Entrypoint, RemovalChangeSet, RemovalPlan};
 use crate::deadcode_model::{
     CONFIDENCE_HIGH, FINDING_CATEGORY_UNUSED_CONTROLLER_METHOD, Finding,
     SYMBOL_KIND_CONTROLLER_METHOD, SymbolRecord,
 };
+use crate::model::ControllerMethod;
 use crate::parser::line_range_for_span;
 use crate::pipeline::PipelineResult;
 
@@ -19,7 +22,9 @@ pub fn analyze_controller_reachability(
     request: &AnalysisRequest,
     result: &PipelineResult,
 ) -> ControllerReachabilityReport {
+    let call_graph = build_same_controller_call_graph(result);
     let mut reachable_actions = BTreeSet::new();
+    let mut worklist = VecDeque::new();
     let mut entrypoints = Vec::new();
 
     for route in &request.runtime.routes {
@@ -27,11 +32,23 @@ pub fn analyze_controller_reachability(
             continue;
         };
         if reachable_actions.insert(action_key.clone()) {
+            worklist.push_back(action_key.clone());
             entrypoints.push(Entrypoint {
                 kind: "runtime_route".to_string(),
                 symbol: action_key,
                 source: route.route_id.clone(),
             });
+        }
+    }
+
+    while let Some(symbol) = worklist.pop_front() {
+        let Some(callees) = call_graph.get(&symbol) else {
+            continue;
+        };
+        for callee in callees {
+            if reachable_actions.insert(callee.clone()) {
+                worklist.push_back(callee.clone());
+            }
         }
     }
 
@@ -97,5 +114,89 @@ pub fn analyze_controller_reachability(
         symbols,
         findings,
         removal_plan: RemovalPlan { change_sets },
+    }
+}
+
+fn build_same_controller_call_graph(result: &PipelineResult) -> BTreeMap<String, BTreeSet<String>> {
+    let mut methods_by_controller = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut controller_records = Vec::new();
+
+    for (_, controller) in result.controller_methods() {
+        methods_by_controller
+            .entry(controller.fqcn.clone())
+            .or_default()
+            .insert(controller.method_name.clone());
+        controller_records.push(controller);
+    }
+
+    let mut call_graph = BTreeMap::<String, BTreeSet<String>>::new();
+    for controller in controller_records {
+        let symbol = format!("{}::{}", controller.fqcn, controller.method_name);
+        let known_methods = methods_by_controller
+            .get(&controller.fqcn)
+            .cloned()
+            .unwrap_or_default();
+        let callees = collect_same_controller_callees(controller, &known_methods)
+            .into_iter()
+            .map(|method_name| format!("{}::{method_name}", controller.fqcn))
+            .collect();
+        call_graph.insert(symbol, callees);
+    }
+
+    call_graph
+}
+
+fn collect_same_controller_callees(
+    controller: &ControllerMethod,
+    known_methods: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let mut callees = BTreeSet::new();
+
+    let this_call_re =
+        Regex::new(r#"\$this->([A-Za-z_][A-Za-z0-9_]*)\s*\("#).expect("this call regex");
+    for captures in this_call_re.captures_iter(&controller.body_text) {
+        let Some(method_name) = captures.get(1) else {
+            continue;
+        };
+        register_same_controller_callee(&mut callees, known_methods, method_name.as_str());
+    }
+
+    let static_call_re =
+        Regex::new(r#"(self|static)::([A-Za-z_][A-Za-z0-9_]*)\s*\("#).expect("static call regex");
+    for captures in static_call_re.captures_iter(&controller.body_text) {
+        let Some(method_name) = captures.get(2) else {
+            continue;
+        };
+        register_same_controller_callee(&mut callees, known_methods, method_name.as_str());
+    }
+
+    let qualified_call_re =
+        Regex::new(r#"([A-Za-z_\\][A-Za-z0-9_\\]*)::([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
+            .expect("qualified call regex");
+    for captures in qualified_call_re.captures_iter(&controller.body_text) {
+        let Some(class_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(method_name) = captures.get(2) else {
+            continue;
+        };
+
+        let called_class = class_name.as_str().trim_start_matches('\\');
+        if called_class == controller.class_name || called_class == controller.fqcn {
+            register_same_controller_callee(&mut callees, known_methods, method_name.as_str());
+        }
+    }
+
+    callees.remove(&controller.method_name);
+    callees
+}
+
+fn register_same_controller_callee(
+    callees: &mut BTreeSet<String>,
+    known_methods: &BTreeSet<String>,
+    method_name: &str,
+) {
+    if known_methods.contains(method_name) {
+        callees.insert(method_name.to_string());
     }
 }

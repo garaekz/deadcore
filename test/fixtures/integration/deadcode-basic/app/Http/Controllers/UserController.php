@@ -6,6 +6,11 @@ final class UserController
 {
     public function index()
     {
+        return $this->reachableThroughIndex();
+    }
+
+    public function reachableThroughIndex()
+    {
         return response()->json([
             'users' => [],
         ], 200);
