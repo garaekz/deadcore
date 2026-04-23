@@ -1,0 +1,22 @@
+{
+  "relation": "image",
+  "type": "morphOne",
+  "model": "App\\Models\\Image",
+  "morphType": "imageable_type",
+  "morphId": "imageable_id",
+  "discriminator": {
+    "propertyName": "imageable_type",
+    "mapping": {
+      "post": "App\\Models\\Post"
+    },
+    "source": "inferred",
+    "isExplicit": false
+  },
+  "depthTruncated": false,
+  "pattern": "morphOne_definition",
+  "method": "image",
+  "context": "model_relationship",
+  "relatedModels": [
+    "App\\Models\\Image"
+  ]
+}

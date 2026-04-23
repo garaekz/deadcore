@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "version": "0.1.4",
+    "timestamp": "2025-09-01T00:00:00Z",
+    "project": {
+      "root": "../../test/fixtures/projects/test-laravel",
+      "name": "",
+      "version": ""
+    }
+  },
+  "stats": {
+    "files_analyzed": 0,
+    "files_skipped": 0,
+    "parse_errors": 0,
+    "analysis_duration_ms": 0
+  },
+  "routes": [],
+  "controllers": [],
+  "models": [],
+  "middleware": [],
+  "migrations": []
+}

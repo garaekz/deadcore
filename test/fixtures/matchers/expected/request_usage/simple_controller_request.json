@@ -1,0 +1,116 @@
+[
+  {
+    "type": "request_usage",
+    "position": {
+      "row": 26,
+      "column": 17
+    },
+    "confidence": 0.90,
+    "contentTypes": ["application/json", "application/x-www-form-urlencoded"],
+    "methods": ["POST", "PUT", "PATCH"],
+    "body": {
+      "name": {"type": "mixed"},
+      "email": {"type": "mixed"}
+    },
+    "files": {}
+  },
+  {
+    "type": "request_usage",
+    "position": {
+      "row": 51,
+      "column": 17
+    },
+    "confidence": 0.88,
+    "contentTypes": ["application/json", "application/x-www-form-urlencoded"],
+    "methods": ["POST", "PUT", "PATCH"],
+    "body": {
+      "name": {"type": "string"},
+      "email": {"type": "string", "default": "default@example.com"}
+    },
+    "files": {}
+  },
+  {
+    "type": "request_usage",
+    "position": {
+      "row": 52,
+      "column": 19
+    },
+    "confidence": 0.88,
+    "contentTypes": ["application/json", "application/x-www-form-urlencoded"],
+    "methods": ["POST", "PUT", "PATCH"],
+    "body": {
+      "email": {"type": "string", "default": "default@example.com"}
+    },
+    "files": {}
+  },
+  {
+    "type": "request_usage",
+    "position": {
+      "row": 76,
+      "column": 17
+    },
+    "confidence": 0.95,
+    "contentTypes": ["multipart/form-data"],
+    "methods": ["POST"],
+    "body": {},
+    "files": {
+      "avatar": {"type": "file"}
+    }
+  },
+  {
+    "type": "request_usage",
+    "position": {
+      "row": 91,
+      "column": 17
+    },
+    "confidence": 0.87,
+    "contentTypes": ["application/json", "application/x-www-form-urlencoded"],
+    "methods": ["POST", "PUT", "PATCH"],
+    "body": {
+      "name": {"type": "mixed"},
+      "email": {"type": "mixed"}
+    },
+    "files": {}
+  },
+  {
+    "type": "request_usage",
+    "position": {
+      "row": 92,
+      "column": 21
+    },
+    "confidence": 0.85,
+    "contentTypes": ["application/json", "application/x-www-form-urlencoded"],
+    "methods": ["POST", "PUT", "PATCH"],
+    "body": {
+      "password": {"type": "excluded"},
+      "_token": {"type": "excluded"}
+    },
+    "files": {}
+  },
+  {
+    "type": "request_usage",
+    "position": {
+      "row": 103,
+      "column": 21
+    },
+    "confidence": 0.95,
+    "contentTypes": ["application/json"],
+    "methods": ["POST", "PUT", "PATCH"],
+    "body": {},
+    "files": {}
+  },
+  {
+    "type": "request_usage",
+    "position": {
+      "row": 104,
+      "column": 30
+    },
+    "confidence": 0.95,
+    "contentTypes": ["application/json"],
+    "methods": ["POST", "PUT", "PATCH"],
+    "body": {
+      "key": {"type": "json_key"}
+    },
+    "files": {}
+  }
+]

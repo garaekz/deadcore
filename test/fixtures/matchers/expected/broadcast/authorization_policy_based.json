@@ -1,0 +1,34 @@
+{
+  "channel": "document-editing",
+  "type": "private",
+  "pattern": "Broadcast::private",
+  "hasCallback": true,
+  "parameters": [
+    {
+      "name": "documentId",
+      "type": "route_parameter",
+      "position": 1
+    }
+  ],
+  "visibility": "private",
+  "authorization": {
+    "required": true,
+    "callback": "function ($user, $documentId) { return $document && $user->can('update', $document); }",
+    "complexity": "policy_based",
+    "userParameter": true,
+    "additionalParameters": ["documentId"],
+    "hasDatabaseQueries": true,
+    "usesLaravelPolicies": true,
+    "returnType": "boolean"
+  },
+  "routeParameters": {
+    "count": 1,
+    "names": ["documentId"],
+    "pattern": "document-editing"
+  },
+  "laravelFeatures": {
+    "policies": true,
+    "authorization": true
+  },
+  "context": "broadcast_channel_definition"
+}

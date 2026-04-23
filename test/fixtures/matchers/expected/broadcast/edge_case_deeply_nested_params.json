@@ -1,0 +1,59 @@
+{
+  "channel": "deep.{level1}.nested.{level2}.very.{level3}.deep.{level4}.structure.{level5}",
+  "type": "presence",
+  "pattern": "Broadcast::presence",
+  "hasCallback": true,
+  "parameters": [
+    {
+      "name": "level1",
+      "type": "route_parameter",
+      "position": 1
+    },
+    {
+      "name": "level2",
+      "type": "route_parameter",
+      "position": 2
+    },
+    {
+      "name": "level3",
+      "type": "route_parameter",
+      "position": 3
+    },
+    {
+      "name": "level4",
+      "type": "route_parameter",
+      "position": 4
+    },
+    {
+      "name": "level5",
+      "type": "route_parameter",
+      "position": 5
+    }
+  ],
+  "visibility": "presence",
+  "authorization": {
+    "required": true,
+    "callback": "function ($user, $level1, $level2, $level3, $level4, $level5) { return array; }",
+    "complexity": "multi_parameter",
+    "userParameter": true,
+    "additionalParameters": ["level1", "level2", "level3", "level4", "level5"],
+    "returnsUserData": true
+  },
+  "presenceData": {
+    "fields": ["id", "levels"],
+    "dynamic": true,
+    "containsParameterData": true
+  },
+  "routeParameters": {
+    "count": 5,
+    "names": ["level1", "level2", "level3", "level4", "level5"],
+    "pattern": "deep.{level1}.nested.{level2}.very.{level3}.deep.{level4}.structure.{level5}",
+    "depth": "very_high"
+  },
+  "edgeCase": {
+    "type": "deeply_nested_parameters",
+    "description": "Extreme parameter nesting in channel structure"
+  },
+  "complexity": "extreme",
+  "context": "broadcast_channel_definition"
+}

@@ -1,0 +1,25 @@
+{
+  "packages": [
+    {
+      "name": "spatie/laravel-data",
+      "version": "4.12.0"
+    },
+    {
+      "name": "spatie/laravel-query-builder",
+      "version": "6.1.0"
+    },
+    {
+      "name": "spatie/laravel-permission",
+      "version": "6.8.0"
+    },
+    {
+      "name": "spatie/laravel-medialibrary",
+      "version": "11.2.0"
+    },
+    {
+      "name": "spatie/laravel-translatable",
+      "version": "6.8.0"
+    }
+  ],
+  "packages-dev": []
+}

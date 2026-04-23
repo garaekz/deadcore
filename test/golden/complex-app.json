@@ -1,0 +1,306 @@
+{
+  "meta": {
+    "partial": false,
+    "stats": {
+      "filesParsed": 10,
+      "skipped": 0,
+      "durationMs": 400
+    }
+  },
+  "controllers": [
+    {
+      "class": "App\\Http\\Controllers\\PostController",
+      "file": "app/Http/Controllers/PostController.php",
+      "methods": [
+        {
+          "name": "index",
+          "httpMethods": ["GET"],
+          "httpStatus": [200],
+          "requestUsage": [],
+          "scopesUsed": [
+            {
+              "on": "App\\Models\\Post",
+              "name": "published"
+            },
+            {
+              "on": "App\\Models\\Post",
+              "name": "byActiveUsers"
+            },
+            {
+              "on": "App\\Models\\Post",
+              "name": "withTags"
+            }
+          ]
+        },
+        {
+          "name": "store",
+          "httpMethods": ["POST"],
+          "httpStatus": [201],
+          "requestUsage": [
+            {
+              "method": "validate",
+              "rules": ["title", "content", "status", "tags"]
+            }
+          ]
+        },
+        {
+          "name": "show",
+          "httpMethods": ["GET"],
+          "httpStatus": [200],
+          "requestUsage": []
+        },
+        {
+          "name": "update",
+          "httpMethods": ["PUT", "PATCH"],
+          "httpStatus": [200],
+          "requestUsage": [
+            {
+              "method": "validate",
+              "rules": ["title", "content", "status", "tags"]
+            }
+          ]
+        },
+        {
+          "name": "destroy",
+          "httpMethods": ["DELETE"],
+          "httpStatus": [204],
+          "requestUsage": []
+        }
+      ]
+    }
+  ],
+  "models": [
+    {
+      "class": "App\\Models\\Comment",
+      "file": "app/Models/Comment.php",
+      "relationships": [
+        {
+          "name": "commentable",
+          "type": "morphTo"
+        },
+        {
+          "name": "user",
+          "type": "belongsTo",
+          "related": "App\\Models\\User"
+        }
+      ]
+    },
+    {
+      "class": "App\\Models\\Post",
+      "file": "app/Models/Post.php",
+      "relationships": [
+        {
+          "name": "user",
+          "type": "belongsTo",
+          "related": "App\\Models\\User"
+        },
+        {
+          "name": "image",
+          "type": "morphOne",
+          "related": "App\\Models\\Image"
+        },
+        {
+          "name": "comments",
+          "type": "morphMany",
+          "related": "App\\Models\\Comment"
+        },
+        {
+          "name": "tags",
+          "type": "belongsToMany",
+          "related": "App\\Models\\Tag",
+          "withPivot": [
+            {
+              "relation": "tags",
+              "columns": ["relevance_score", "created_at"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "class": "App\\Models\\Video",
+      "file": "app/Models/Video.php",
+      "relationships": [
+        {
+          "name": "user",
+          "type": "belongsTo",
+          "related": "App\\Models\\User"
+        },
+        {
+          "name": "comments",
+          "type": "morphMany",
+          "related": "App\\Models\\Comment"
+        },
+        {
+          "name": "tags",
+          "type": "morphToMany",
+          "related": "App\\Models\\Tag"
+        }
+      ]
+    },
+    {
+      "class": "App\\Models\\Image",
+      "file": "app/Models/Image.php",
+      "relationships": [
+        {
+          "name": "imageable",
+          "type": "morphTo"
+        }
+      ]
+    },
+    {
+      "class": "App\\Models\\Tag",
+      "file": "app/Models/Tag.php",
+      "relationships": [
+        {
+          "name": "posts",
+          "type": "belongsToMany",
+          "related": "App\\Models\\Post",
+          "withPivot": [
+            {
+              "relation": "posts",
+              "columns": ["relevance_score", "created_at"]
+            }
+          ]
+        },
+        {
+          "name": "videos",
+          "type": "morphedByMany",
+          "related": "App\\Models\\Video"
+        }
+      ]
+    },
+    {
+      "class": "App\\Models\\User",
+      "file": "app/Models/User.php",
+      "relationships": [
+        {
+          "name": "posts",
+          "type": "hasMany",
+          "related": "App\\Models\\Post"
+        },
+        {
+          "name": "videos",
+          "type": "hasMany",
+          "related": "App\\Models\\Video"
+        },
+        {
+          "name": "comments",
+          "type": "hasMany",
+          "related": "App\\Models\\Comment"
+        },
+        {
+          "name": "avatar",
+          "type": "morphOne",
+          "related": "App\\Models\\Image"
+        }
+      ]
+    }
+  ],
+  "polymorphic": [
+    {
+      "name": "commentable",
+      "discriminator": "commentable_type",
+      "relations": [
+        {
+          "model": "App\\Models\\Post",
+          "type": "comments"
+        },
+        {
+          "model": "App\\Models\\Video", 
+          "type": "comments"
+        }
+      ]
+    },
+    {
+      "name": "imageable",
+      "discriminator": "imageable_type",
+      "relations": [
+        {
+          "model": "App\\Models\\Post",
+          "type": "image"
+        },
+        {
+          "model": "App\\Models\\User",
+          "type": "avatar"
+        }
+      ]
+    },
+    {
+      "name": "taggable",
+      "discriminator": "taggable_type",
+      "relations": [
+        {
+          "model": "App\\Models\\Video",
+          "type": "tags"
+        }
+      ]
+    }
+  ],
+  "broadcast": [
+    {
+      "channel": "App.Models.User.{id}",
+      "type": "private",
+      "parameters": [
+        {
+          "name": "id",
+          "type": "int"
+        }
+      ]
+    },
+    {
+      "channel": "notifications",
+      "type": "public",
+      "parameters": []
+    },
+    {
+      "channel": "orders.{orderId}",
+      "type": "private",
+      "parameters": [
+        {
+          "name": "orderId",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "channel": "chat.{roomId}",
+      "type": "private",
+      "parameters": [
+        {
+          "name": "roomId",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "channel": "admin.{userId}",
+      "type": "private",
+      "parameters": [
+        {
+          "name": "userId",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "channel": "live-updates",
+      "type": "presence",
+      "parameters": []
+    },
+    {
+      "channel": "workspace.{workspaceId}.team.{teamId}",
+      "type": "private",
+      "parameters": [
+        {
+          "name": "workspaceId",
+          "type": "string"
+        },
+        {
+          "name": "teamId",
+          "type": "string"
+        }
+      ]
+    }
+  ]
+}

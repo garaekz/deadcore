@@ -1,0 +1,25 @@
+{
+  "project": {
+    "root": "./test/fixtures/projects/manual",
+    "composer": "composer.json"
+  },
+  "scan": {
+    "targets": ["app/", "routes/"],
+    "vendor_whitelist": [],
+    "globs": ["**/*.php"]
+  },
+  "limits": {
+    "max_workers": 8,
+    "max_files": 500,
+    "max_depth": 2
+  },
+  "cache": {
+    "enabled": true,
+    "kind": "sha256+mtime"
+  },
+  "features": {
+    "http_status": true,
+    "request_usage": true,
+    "resource_usage": true
+  }
+}

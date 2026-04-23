@@ -1,0 +1,134 @@
+[
+  {
+    "type": "resource",
+    "position": {
+      "row": 20,
+      "column": 15
+    },
+    "confidence": 0.98,
+    "class": "UserResource",
+    "collection": false,
+    "pattern": "return_new_resource"
+  },
+  {
+    "type": "resource",
+    "position": {
+      "row": 34,
+      "column": 15
+    },
+    "confidence": 1.0,
+    "class": "UserResource",
+    "collection": true,
+    "pattern": "return_resource_collection"
+  },
+  {
+    "type": "resource",
+    "position": {
+      "row": 46,
+      "column": 15
+    },
+    "confidence": 0.95,
+    "class": "UserResource",
+    "collection": false,
+    "pattern": "resource_make_static"
+  },
+  {
+    "type": "resource",
+    "position": {
+      "row": 56,
+      "column": 22
+    },
+    "confidence": 1.0,
+    "class": "UserResource",
+    "collection": true,
+    "pattern": "resource_collection_static"
+  },
+  {
+    "type": "resource",
+    "position": {
+      "row": 70,
+      "column": 26
+    },
+    "confidence": 0.95,
+    "class": "UserResource",
+    "collection": false,
+    "pattern": "new_resource_instantiation"
+  },
+  {
+    "type": "resource",
+    "position": {
+      "row": 71,
+      "column": 26
+    },
+    "confidence": 0.95,
+    "class": "PostResource",
+    "collection": false,
+    "pattern": "new_resource_instantiation"
+  },
+  {
+    "type": "resource",
+    "position": {
+      "row": 88,
+      "column": 19
+    },
+    "confidence": 0.98,
+    "class": "UserResource",
+    "collection": false,
+    "pattern": "return_new_resource"
+  },
+  {
+    "type": "resource",
+    "position": {
+      "row": 91,
+      "column": 15
+    },
+    "confidence": 1.0,
+    "class": "UserResource",
+    "collection": true,
+    "pattern": "return_resource_collection"
+  },
+  {
+    "type": "resource",
+    "position": {
+      "row": 103,
+      "column": 23
+    },
+    "confidence": 0.98,
+    "class": "UserResource",
+    "collection": false,
+    "pattern": "return_new_resource"
+  },
+  {
+    "type": "resource",
+    "position": {
+      "row": 113,
+      "column": 18
+    },
+    "confidence": 0.90,
+    "class": "UserResource",
+    "collection": false,
+    "pattern": "variable_resource_assignment"
+  },
+  {
+    "type": "resource",
+    "position": {
+      "row": 126,
+      "column": 15
+    },
+    "confidence": 0.95,
+    "class": "UserCollection",
+    "collection": true,
+    "pattern": "new_resource_instantiation"
+  },
+  {
+    "type": "resource",
+    "position": {
+      "row": 138,
+      "column": 23
+    },
+    "confidence": 0.98,
+    "class": "UserResource",
+    "collection": false,
+    "pattern": "return_new_resource"
+  }
+]

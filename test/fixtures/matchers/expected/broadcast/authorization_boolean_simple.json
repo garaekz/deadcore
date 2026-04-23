@@ -1,0 +1,17 @@
+{
+  "channel": "simple-auth",
+  "type": "private",
+  "pattern": "Broadcast::private",
+  "hasCallback": true,
+  "parameters": [],
+  "visibility": "private",
+  "authorization": {
+    "required": true,
+    "callback": "function ($user) { return true; }",
+    "complexity": "simple",
+    "userParameter": true,
+    "returnType": "boolean",
+    "alwaysTrue": true
+  },
+  "context": "broadcast_channel_definition"
+}

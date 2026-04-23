@@ -1,0 +1,25 @@
+{
+  "relation": "morphMap_registration",
+  "type": "morphMap",
+  "discriminator": {
+    "propertyName": "type",
+    "mapping": {
+      "post": "App\\Models\\Post",
+      "video": "App\\Models\\Video", 
+      "user": "App\\Models\\User",
+      "article": "App\\Models\\Article"
+    },
+    "source": "morphMap",
+    "isExplicit": true
+  },
+  "depthTruncated": false,
+  "pattern": "morphMap_definition",
+  "method": "boot",
+  "context": "service_provider",
+  "relatedModels": [
+    "App\\Models\\Post",
+    "App\\Models\\Video",
+    "App\\Models\\User", 
+    "App\\Models\\Article"
+  ]
+}

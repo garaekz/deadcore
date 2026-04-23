@@ -1,0 +1,17 @@
+{
+  "project": {
+    "root": "../../test/fixtures/integration/api-project",
+    "composer": "composer.json"
+  },
+  "scan": {
+    "targets": ["app", "routes"],
+    "globs": ["**/*.php"]
+  },
+  "features": {
+    "http_status": true,
+    "request_usage": true,
+    "resource_usage": true,
+    "with_pivot": true,
+    "scopes_used": true
+  }
+}

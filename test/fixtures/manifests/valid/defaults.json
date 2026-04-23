@@ -1,0 +1,9 @@
+{
+  "project": {
+    "root": "../../test/fixtures/projects/test-laravel",
+    "composer": "composer.json"
+  },
+  "scan": {
+    "targets": ["app", "routes"]
+  }
+}

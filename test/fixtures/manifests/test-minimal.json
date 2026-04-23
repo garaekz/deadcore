@@ -1,0 +1,9 @@
+{
+  "project": {
+    "root": "./test/fixtures/projects/manual",
+    "composer": "composer.json"
+  },
+  "scan": {
+    "targets": ["app/"]
+  }
+}

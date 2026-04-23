@@ -1,0 +1,17 @@
+{
+  "relation": "secondaryTarget",
+  "type": "morphTo",
+  "morphType": "secondary_type",
+  "morphId": "secondary_id", 
+  "discriminator": {
+    "propertyName": "secondary_type",
+    "mapping": {},
+    "source": "conditional",
+    "isExplicit": false
+  },
+  "depthTruncated": false,
+  "pattern": "morphTo_conditional",
+  "method": "secondaryTarget",
+  "context": "model_relationship_conditional",
+  "relatedModels": []
+}

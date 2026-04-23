@@ -1,0 +1,27 @@
+{
+  "channel": "user.{id}",
+  "type": "private",
+  "pattern": "Broadcast::private",
+  "hasCallback": true,
+  "parameters": [
+    {
+      "name": "id",
+      "type": "route_parameter",
+      "position": 1
+    }
+  ],
+  "visibility": "private",
+  "authorization": {
+    "required": true,
+    "callback": "function ($user, $id) { return (int) $user->id === (int) $id; }",
+    "complexity": "parameter_comparison",
+    "userParameter": true,
+    "additionalParameters": ["id"]
+  },
+  "routeParameters": {
+    "count": 1,
+    "names": ["id"],
+    "pattern": "user.{id}"
+  },
+  "context": "broadcast_channel_definition"
+}

@@ -1,0 +1,20 @@
+{
+  "project": {
+    "root": "../../test/fixtures/integration/complex-app",
+    "composer": "composer.json"
+  },
+  "scan": {
+    "targets": ["app", "routes"],
+    "globs": ["**/*.php"]
+  },
+  "features": {
+    "http_status": true,
+    "request_usage": true,
+    "resource_usage": true,
+    "with_pivot": true,
+    "attribute_make": true,
+    "scopes_used": true,
+    "polymorphic": true,
+    "broadcast_channels": true
+  }
+}

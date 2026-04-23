@@ -1,0 +1,13 @@
+{
+  "fqcn": "App\\Http\\Controllers\\ResourceController",
+  "method": "indexUsers",
+  "http": null,
+  "request": null,
+  "resources": [
+    {
+      "class": "App\\Http\\Resources\\UserResource",
+      "collection": true
+    }
+  ],
+  "scopesUsed": null
+}

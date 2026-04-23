@@ -1,0 +1,186 @@
+{
+  "meta": {
+    "partial": false,
+    "stats": {
+      "filesParsed": 13,
+      "skipped": 0,
+      "durationMs": 300
+    }
+  },
+  "controllers": [
+    {
+      "class": "App\\Http\\Controllers\\ProductController",
+      "file": "app/Http/Controllers/ProductController.php",
+      "methods": [
+        {
+          "name": "index",
+          "httpMethods": ["GET"],
+          "httpStatus": [200],
+          "requestUsage": [],
+          "resourceUsage": [
+            {
+              "class": "App\\Http\\Resources\\ProductCollection",
+              "method": "collection"
+            }
+          ]
+        },
+        {
+          "name": "store",
+          "httpMethods": ["POST"],
+          "httpStatus": [201],
+          "requestUsage": [
+            {
+              "class": "App\\Http\\Requests\\StoreProductRequest",
+              "method": "validated"
+            }
+          ],
+          "resourceUsage": [
+            {
+              "class": "App\\Http\\Resources\\ProductResource",
+              "method": "response"
+            }
+          ]
+        },
+        {
+          "name": "show",
+          "httpMethods": ["GET"],
+          "httpStatus": [200],
+          "requestUsage": [],
+          "resourceUsage": [
+            {
+              "class": "App\\Http\\Resources\\ProductResource",
+              "method": "new"
+            }
+          ]
+        },
+        {
+          "name": "update",
+          "httpMethods": ["PUT", "PATCH"],
+          "httpStatus": [200],
+          "requestUsage": [
+            {
+              "class": "App\\Http\\Requests\\UpdateProductRequest",
+              "method": "validated"
+            }
+          ],
+          "resourceUsage": [
+            {
+              "class": "App\\Http\\Resources\\ProductResource",
+              "method": "new"
+            }
+          ]
+        },
+        {
+          "name": "destroy",
+          "httpMethods": ["DELETE"],
+          "httpStatus": [204],
+          "requestUsage": []
+        },
+        {
+          "name": "featured",
+          "httpMethods": ["GET"],
+          "httpStatus": [200],
+          "requestUsage": [],
+          "scopesUsed": [
+            {
+              "on": "App\\Models\\Product",
+              "name": "featured"
+            }
+          ],
+          "resourceUsage": [
+            {
+              "class": "App\\Http\\Resources\\ProductResource",
+              "method": "collection"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "models": [
+    {
+      "class": "App\\Models\\Product",
+      "file": "app/Models/Product.php",
+      "relationships": [
+        {
+          "name": "category",
+          "type": "belongsTo",
+          "related": "App\\Models\\Category"
+        },
+        {
+          "name": "tags",
+          "type": "belongsToMany",
+          "related": "App\\Models\\Tag",
+          "withPivot": [
+            {
+              "relation": "tags",
+              "columns": ["created_at"]
+            }
+          ]
+        },
+        {
+          "name": "reviews",
+          "type": "hasMany",
+          "related": "App\\Models\\Review"
+        }
+      ]
+    },
+    {
+      "class": "App\\Models\\Category",
+      "file": "app/Models/Category.php",
+      "relationships": [
+        {
+          "name": "products",
+          "type": "hasMany",
+          "related": "App\\Models\\Product"
+        }
+      ]
+    },
+    {
+      "class": "App\\Models\\Tag",
+      "file": "app/Models/Tag.php",
+      "relationships": [
+        {
+          "name": "products",
+          "type": "belongsToMany",
+          "related": "App\\Models\\Product",
+          "withPivot": [
+            {
+              "relation": "products",
+              "columns": ["created_at"]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "class": "App\\Models\\Review",
+      "file": "app/Models/Review.php",
+      "relationships": [
+        {
+          "name": "product",
+          "type": "belongsTo",
+          "related": "App\\Models\\Product"
+        },
+        {
+          "name": "user",
+          "type": "belongsTo",
+          "related": "App\\Models\\User"
+        }
+      ]
+    },
+    {
+      "class": "App\\Models\\User",
+      "file": "app/Models/User.php",
+      "relationships": [
+        {
+          "name": "reviews",
+          "type": "hasMany",
+          "related": "App\\Models\\Review"
+        }
+      ]
+    }
+  ],
+  "polymorphic": [],
+  "broadcast": []
+}

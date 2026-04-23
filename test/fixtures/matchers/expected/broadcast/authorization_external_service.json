@@ -1,0 +1,31 @@
+{
+  "channel": "third-party-integration",
+  "type": "presence",
+  "pattern": "Broadcast::presence",
+  "hasCallback": true,
+  "parameters": [],
+  "visibility": "presence",
+  "authorization": {
+    "required": true,
+    "callback": "function ($user) { /* external service integration with fallback */ }",
+    "complexity": "external_service",
+    "userParameter": true,
+    "returnsUserData": true,
+    "hasExternalApiCalls": true,
+    "hasExceptionHandling": true,
+    "hasFallbackLogic": true
+  },
+  "presenceData": {
+    "fields": ["id", "name", "external_id", "permissions", "verified_at"],
+    "dynamic": true,
+    "conditional": true,
+    "hasExternalData": true
+  },
+  "externalIntegration": {
+    "hasApiCalls": true,
+    "hasTimeout": true,
+    "hasFallback": true
+  },
+  "complexity": "very_high",
+  "context": "broadcast_channel_definition"
+}

@@ -1,0 +1,30 @@
+{
+  "project": {
+    "root": "../../test/fixtures/projects/test-laravel",
+    "composer": "composer.json"
+  },
+  "scan": {
+    "targets": ["app", "routes"],
+    "vendor_whitelist": ["symfony/console"],
+    "globs": ["app/**/*.php", "routes/**/*.php"]
+  },
+  "limits": {
+    "max_workers": 4,
+    "max_files": 1000,
+    "max_depth": 3
+  },
+  "cache": {
+    "enabled": true,
+    "kind": "sha256+mtime"
+  },
+  "features": {
+    "http_status": true,
+    "request_usage": true,
+    "resource_usage": true,
+    "with_pivot": false,
+    "attribute_make": true,
+    "scopes_used": true,
+    "polymorphic": false,
+    "broadcast_channels": true
+  }
+}

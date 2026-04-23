@@ -1,0 +1,25 @@
+{
+  "project": {
+    "root": "/path/to/project",
+    "composer": "composer.json"
+  },
+  "scan": {
+    "targets": ["app/", "routes/"],
+    "vendor_whitelist": [],
+    "globs": ["**/*.php"]
+  },
+  "limits": {
+    "max_workers": 4,
+    "max_files": 100,
+    "max_depth": 3
+  },
+  "cache": {
+    "enabled": false,
+    "kind": "sha256+mtime"
+  },
+  "features": {
+    "http_status": true,
+    "request_usage": true,
+    "resource_usage": true
+  }
+}

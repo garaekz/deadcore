@@ -1,0 +1,65 @@
+# Build output
+/bin/
+/dist/
+/target/
+/oxinfer
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+*.pprof
+coverage.html
+cover.out
+cpu.prof
+mem.prof
+
+# IDE files
+.vscode/
+.idea/
+CLAUDE.md
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temp files
+*.tmp
+*.temp
+*.log
+
+# CLI output
+delta.json
+output.json
+*.delta.json
+temp_test_outputs/
+
+# Local scratch fixtures
+demo-manifest.json
+invalid-manifest.json
+/app/
+/routes/
+
+# Keep selected dotfiles and workflows
+.*/
+!.gitignore
+!.github/
+!.github/workflows/
+!.github/workflows/ci.yml
+
+# Analyzer artifacts
+!.oxinfer/
+!.oxinfer/README.md
+.oxinfer/*
+!.oxinfer/README.md
+**/.oxinfer/

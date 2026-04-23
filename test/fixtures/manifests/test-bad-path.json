@@ -1,0 +1,9 @@
+{
+  "project": {
+    "root": "/path/that/does/not/exist",
+    "composer": "composer.json"
+  },
+  "scan": {
+    "targets": ["app/"]
+  }
+}

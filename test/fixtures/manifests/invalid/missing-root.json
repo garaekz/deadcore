@@ -1,0 +1,8 @@
+{
+  "project": {
+    "name": "Test App"
+  },
+  "analysis": {
+    "patterns": ["**/*.php"]
+  }
+}

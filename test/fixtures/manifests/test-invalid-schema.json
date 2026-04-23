@@ -1,0 +1,10 @@
+{
+  "project": {
+    "root": ".",
+    "composer": "composer.json",
+    "unknown_field": "should fail"
+  },
+  "scan": {
+    "targets": ["app/"]
+  }
+}

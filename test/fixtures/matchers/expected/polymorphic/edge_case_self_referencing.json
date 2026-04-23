@@ -1,0 +1,23 @@
+{
+  "relation": "replies",
+  "type": "morphMany",
+  "model": "App\\Models\\Comment",
+  "morphType": "commentable_type", 
+  "morphId": "commentable_id",
+  "discriminator": {
+    "propertyName": "commentable_type",
+    "mapping": {
+      "comment": "App\\Models\\Comment"
+    },
+    "source": "inferred",
+    "isExplicit": false
+  },
+  "depthTruncated": true,
+  "maxDepth": 3,
+  "pattern": "morphMany_self_reference",
+  "method": "replies",
+  "context": "model_relationship",
+  "relatedModels": [
+    "App\\Models\\Comment"
+  ]
+}

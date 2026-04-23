@@ -1,0 +1,8 @@
+{
+  "project": {
+    "root": "../../test/fixtures/projects/test-laravel"
+  },
+  "analysis": {
+    "patterns": ["**/*.php",
+  }
+}

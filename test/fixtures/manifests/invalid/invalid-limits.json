@@ -1,0 +1,21 @@
+{
+  "project": {
+    "root": "../../test/fixtures/projects/test-laravel"
+  },
+  "analysis": {
+    "patterns": ["**/*.php"],
+    "exclude": ["vendor/**"],
+    "depth": 25,
+    "limits": {
+      "max_files": 15000,
+      "max_file_size": 50000000
+    },
+    "features": {
+      "routes": true,
+      "controllers": true,
+      "models": true,
+      "middleware": true,
+      "migrations": true
+    }
+  }
+}

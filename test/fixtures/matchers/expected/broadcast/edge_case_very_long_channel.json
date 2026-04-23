@@ -1,0 +1,19 @@
+{
+  "channel": "very.long.channel.name.that.goes.on.and.on.with.many.segments.and.keeps.going.until.it.becomes.really.quite.lengthy.indeed",
+  "type": "public",
+  "pattern": "Broadcast::channel",
+  "hasCallback": true,
+  "parameters": [],
+  "visibility": "public",
+  "authorization": {
+    "required": false,
+    "callback": "function () { return true; }",
+    "complexity": "simple"
+  },
+  "edgeCase": {
+    "type": "long_channel_name",
+    "description": "Unusually long channel name with many segments",
+    "segmentCount": 20
+  },
+  "context": "broadcast_channel_definition"
+}

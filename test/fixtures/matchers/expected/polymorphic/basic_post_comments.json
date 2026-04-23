@@ -1,0 +1,22 @@
+{
+  "relation": "comments",
+  "type": "morphMany",
+  "model": "App\\Models\\Comment",
+  "morphType": "commentable_type",
+  "morphId": "commentable_id",
+  "discriminator": {
+    "propertyName": "commentable_type",
+    "mapping": {
+      "post": "App\\Models\\Post"
+    },
+    "source": "inferred",
+    "isExplicit": false
+  },
+  "depthTruncated": false,
+  "pattern": "morphMany_definition",
+  "method": "comments",
+  "context": "model_relationship",
+  "relatedModels": [
+    "App\\Models\\Comment"
+  ]
+}

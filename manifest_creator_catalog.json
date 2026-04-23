@@ -1,0 +1,32 @@
+{
+  "project": {
+    "root": "/path/to/project",
+    "composer": "composer.json"
+  },
+  "scan": {
+    "targets": [
+      "app/",
+      "routes/"
+    ],
+    "vendor_whitelist": [
+      "spatie/laravel-data",
+      "spatie/laravel-query-builder",
+      "laravel/sanctum"
+    ],
+    "globs": ["**/*.php"]
+  },
+  "limits": {
+    "max_workers": 8,
+    "max_files": 1000,
+    "max_depth": 5
+  },
+  "cache": {
+    "enabled": true,
+    "kind": "sha256+mtime"
+  },
+  "features": {
+    "http_status": true,
+    "request_usage": true,
+    "resource_usage": true
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "test/laravel-project",
+  "type": "project",
+  "description": "Test Laravel project for Oxinfer testing",
+  "autoload": {
+    "psr-4": {
+      "App\\": "app/",
+      "Database\\Factories\\": "database/factories/",
+      "Database\\Seeders\\": "database/seeders/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\": "tests/"
+    }
+  }
+}

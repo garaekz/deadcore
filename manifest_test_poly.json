@@ -1,0 +1,25 @@
+{
+  "project": {
+    "root": "test/fixtures/projects/test-laravel",
+    "composer": "composer.json"
+  },
+  "scan": {
+    "targets": [
+      "app/"
+    ],
+    "vendor_whitelist": [],
+    "globs": ["**/*.php"]
+  },
+  "limits": {
+    "max_workers": 2,
+    "max_files": 50,
+    "max_depth": 5
+  },
+  "cache": {
+    "enabled": true,
+    "kind": "sha256+mtime"
+  },
+  "features": {
+    "polymorphic": true
+  }
+}

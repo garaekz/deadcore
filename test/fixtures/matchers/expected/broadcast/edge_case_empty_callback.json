@@ -1,0 +1,21 @@
+{
+  "channel": "empty-callback",
+  "type": "private",
+  "pattern": "Broadcast::private",
+  "hasCallback": true,
+  "parameters": [],
+  "visibility": "private",
+  "authorization": {
+    "required": true,
+    "callback": "function ($user) { /* no return statement */ }",
+    "complexity": "malformed",
+    "userParameter": true,
+    "hasNoReturn": true,
+    "returnType": "undefined"
+  },
+  "edgeCase": {
+    "type": "empty_callback",
+    "description": "Callback function with no return statement"
+  },
+  "context": "broadcast_channel_definition"
+}

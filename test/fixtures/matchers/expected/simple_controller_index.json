@@ -1,0 +1,11 @@
+{
+  "fqcn": "App\\Http\\Controllers\\SimpleController",
+  "method": "index",
+  "http": {
+    "status": 200,
+    "explicit": true
+  },
+  "request": null,
+  "resources": null,
+  "scopesUsed": null
+}

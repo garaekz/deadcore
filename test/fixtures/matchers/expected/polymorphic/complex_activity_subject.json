@@ -1,0 +1,17 @@
+{
+  "relation": "subject",
+  "type": "morphTo",
+  "morphType": "subject_type",
+  "morphId": "subject_id",
+  "discriminator": {
+    "propertyName": "subject_type",
+    "mapping": {},
+    "source": "inferred",
+    "isExplicit": false
+  },
+  "depthTruncated": false,
+  "pattern": "morphTo_definition",
+  "method": "subject",
+  "context": "model_relationship",
+  "relatedModels": []
+}

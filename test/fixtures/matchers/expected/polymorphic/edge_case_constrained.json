@@ -1,0 +1,17 @@
+{
+  "relation": "secureTarget",
+  "type": "morphTo",
+  "morphType": "target_type",
+  "morphId": "target_id",
+  "discriminator": {
+    "propertyName": "target_type",
+    "mapping": {},
+    "source": "constrained",
+    "isExplicit": false
+  },
+  "depthTruncated": false,
+  "pattern": "morphTo_constrained",
+  "method": "secureTarget", 
+  "context": "model_relationship_security_constrained",
+  "relatedModels": []
+}

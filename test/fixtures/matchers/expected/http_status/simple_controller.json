@@ -1,0 +1,68 @@
+[
+  {
+    "type": "http_status",
+    "position": {
+      "row": 17,
+      "column": 48
+    },
+    "confidence": 0.95,
+    "status": 200,
+    "explicit": true,
+    "pattern": "response_json_with_status"
+  },
+  {
+    "type": "http_status", 
+    "position": {
+      "row": 31,
+      "column": 38
+    },
+    "confidence": 0.95,
+    "status": 201,
+    "explicit": true,
+    "pattern": "response_json_with_status"
+  },
+  {
+    "type": "http_status",
+    "position": {
+      "row": 56,
+      "column": 27
+    },
+    "confidence": 0.95,
+    "status": 200,
+    "explicit": true,
+    "pattern": "response_status_method"
+  },
+  {
+    "type": "http_status",
+    "position": {
+      "row": 67,
+      "column": 23
+    },
+    "confidence": 0.90,
+    "status": 204,
+    "explicit": true,
+    "pattern": "response_direct_status"
+  },
+  {
+    "type": "http_status",
+    "position": {
+      "row": 79,
+      "column": 12
+    },
+    "confidence": 1.0,
+    "status": 400,
+    "explicit": true,
+    "pattern": "abort_call"
+  },
+  {
+    "type": "http_status",
+    "position": {
+      "row": 82,
+      "column": 48
+    },
+    "confidence": 0.95,
+    "status": 201,
+    "explicit": true,
+    "pattern": "response_json_with_status"
+  }
+]

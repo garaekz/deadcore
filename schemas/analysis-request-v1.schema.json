@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oxcribe.dev/schema/analysis-request-v1.schema.json",
+  "title": "Oxinfer Analysis Request V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "requestId",
+    "runtimeFingerprint",
+    "manifest",
+    "runtime"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "oxcribe.oxinfer.v1"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runtimeFingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "manifest": {
+      "$ref": "https://oxcribe.dev/schema/manifest.schema.json"
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "app",
+        "routes"
+      ],
+      "properties": {
+        "app": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "basePath",
+            "laravelVersion",
+            "phpVersion",
+            "appEnv"
+          ],
+          "properties": {
+            "basePath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "laravelVersion": {
+              "type": "string",
+              "minLength": 1
+            },
+            "phpVersion": {
+              "type": "string",
+              "minLength": 1
+            },
+            "appEnv": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "routes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/runtimeRoute"
+          }
+        },
+        "packages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/runtimePackage"
+          },
+          "default": []
+        }
+      }
+    }
+  },
+  "$defs": {
+    "jsonValue": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        }
+      ]
+    },
+    "routeBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parameter",
+        "kind",
+        "isImplicit"
+      ],
+      "properties": {
+        "parameter": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetFqcn": {
+          "type": "string",
+          "minLength": 1
+        },
+        "isImplicit": {
+          "type": "boolean"
+        }
+      }
+    },
+    "runtimePackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "routeAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "controller_method",
+            "invokable_controller",
+            "closure",
+            "unknown"
+          ]
+        },
+        "fqcn": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "controller_method"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "fqcn",
+              "method"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "invokable_controller"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "fqcn"
+            ]
+          }
+        }
+      ]
+    },
+    "runtimeRoute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "routeId",
+        "methods",
+        "uri",
+        "domain",
+        "name",
+        "prefix",
+        "middleware",
+        "where",
+        "defaults",
+        "bindings",
+        "action"
+      ],
+      "properties": {
+        "routeId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "methods": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1
+        },
+        "domain": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prefix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "middleware": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "where": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        "defaults": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonValue"
+          }
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/routeBinding"
+          }
+        },
+        "action": {
+          "$ref": "#/$defs/routeAction"
+        }
+      }
+    }
+  }
+}

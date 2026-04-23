@@ -1,0 +1,84 @@
+{
+  "contractVersion": "oxcribe.oxinfer.v2",
+  "requestId": "req-golden-invokable",
+  "runtimeFingerprint": "fp-golden-invokable",
+  "manifest": {
+    "project": {
+      "root": "__FIXTURE_ROOT__",
+      "composer": "composer.json"
+    },
+    "scan": {
+      "targets": ["app", "routes"],
+      "globs": ["**/*.php"]
+    },
+    "features": {
+      "http_status": true,
+      "request_usage": true,
+      "resource_usage": false
+    }
+  },
+  "runtime": {
+    "app": {
+      "basePath": "__FIXTURE_ROOT__",
+      "laravelVersion": "10.0.0",
+      "phpVersion": "8.3.0",
+      "appEnv": "testing"
+    },
+    "packages": [
+      {
+        "name": "spatie/laravel-data",
+        "version": "^4.0"
+      }
+    ],
+    "routes": [
+      {
+        "routeId": "users.index",
+        "methods": ["GET"],
+        "uri": "users",
+        "domain": null,
+        "name": "users.index",
+        "prefix": "api",
+        "middleware": ["api"],
+        "where": {},
+        "defaults": {},
+        "bindings": [],
+        "action": {
+          "kind": "controller_method",
+          "fqcn": "App\\Http\\Controllers\\UserController",
+          "method": "index"
+        }
+      },
+      {
+        "routeId": "users.invoke",
+        "methods": ["GET"],
+        "uri": "users/invoke",
+        "domain": null,
+        "name": "users.invoke",
+        "prefix": "api",
+        "middleware": ["api"],
+        "where": {},
+        "defaults": {},
+        "bindings": [],
+        "action": {
+          "kind": "invokable_controller",
+          "fqcn": "App\\Http\\Controllers\\InvokeUserController"
+        }
+      },
+      {
+        "routeId": "auth.user",
+        "methods": ["GET"],
+        "uri": "user",
+        "domain": null,
+        "name": null,
+        "prefix": "api",
+        "middleware": ["api", "auth:sanctum"],
+        "where": {},
+        "defaults": {},
+        "bindings": [],
+        "action": {
+          "kind": "closure"
+        }
+      }
+    ]
+  }
+}

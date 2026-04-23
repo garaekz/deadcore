@@ -1,0 +1,8 @@
+{
+  "project": {
+    "composer": "composer.json"
+  },
+  "scan": {
+    "targets": ["app/"]
+  }
+}

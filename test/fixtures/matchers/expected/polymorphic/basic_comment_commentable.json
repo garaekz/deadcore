@@ -1,0 +1,17 @@
+{
+  "relation": "commentable",
+  "type": "morphTo",
+  "morphType": "commentable_type",
+  "morphId": "commentable_id",
+  "discriminator": {
+    "propertyName": "commentable_type",
+    "mapping": {},
+    "source": "inferred",
+    "isExplicit": false
+  },
+  "depthTruncated": false,
+  "pattern": "morphTo_definition",
+  "method": "commentable",
+  "context": "model_relationship",
+  "relatedModels": []
+}

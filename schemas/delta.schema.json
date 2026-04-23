@@ -1,0 +1,850 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oxcribe.dev/schema/delta.schema.json",
+  "title": "Oxinfer Delta",
+  "$defs": {
+    "shapeNode": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/shapeNode"
+      }
+    },
+    "requestField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "location",
+        "path"
+      ],
+      "properties": {
+        "location": {
+          "type": "string",
+          "enum": [
+            "body",
+            "query",
+            "files"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scalarType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "format": {
+          "type": "string",
+          "minLength": 1
+        },
+        "itemType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "wrappers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        },
+        "allowedValues": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "optional": {
+          "type": "boolean"
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "isArray": {
+          "type": "boolean"
+        },
+        "collection": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "via": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "resourceSchemaNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "object",
+            "array"
+          ]
+        },
+        "format": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/resourceSchemaNode"
+          }
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        },
+        "items": {
+          "$ref": "#/$defs/resourceSchemaNode"
+        }
+      }
+    },
+    "responseRedirect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "targetKind"
+      ],
+      "properties": {
+        "targetKind": {
+          "type": "string",
+          "enum": [
+            "url",
+            "route",
+            "back",
+            "inertia_location"
+          ]
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "responseDownload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "disposition"
+      ],
+      "properties": {
+        "disposition": {
+          "type": "string",
+          "enum": [
+            "attachment",
+            "inline"
+          ]
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "responseInertia": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component"
+      ],
+      "properties": {
+        "component": {
+          "type": "string",
+          "minLength": 1
+        },
+        "propsSchema": {
+          "$ref": "#/$defs/resourceSchemaNode"
+        },
+        "rootView": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "argLiteral": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "polymorphicRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation",
+        "type"
+      ],
+      "properties": {
+        "relation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "morphTo",
+            "morphOne",
+            "morphMany",
+            "morphByMany",
+            "morphToMany"
+          ]
+        },
+        "morphType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "morphId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "discriminator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "propertyName",
+            "mapping"
+          ],
+          "properties": {
+            "propertyName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "mapping": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "source": {
+              "type": "string"
+            },
+            "isExplicit": {
+              "type": "boolean",
+              "default": false
+            },
+            "defaultType": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "relatedModels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        },
+        "depthTruncated": {
+          "type": "boolean",
+          "default": false
+        },
+        "maxDepth": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "meta"
+  ],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "partial",
+        "stats"
+      ],
+      "properties": {
+        "partial": {
+          "type": "boolean"
+        },
+        "stats": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filesParsed",
+            "skipped",
+            "durationMs"
+          ],
+          "properties": {
+            "filesParsed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "skipped": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "durationMs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "assemblerStats": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "skippedControllers": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "skippedModels": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "skippedPatterns": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unresolvableMatches": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "version": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "version": {
+          "type": "string"
+        },
+        "generatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "controllers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fqcn",
+          "method"
+        ],
+        "properties": {
+          "fqcn": {
+            "type": "string",
+            "minLength": 1
+          },
+          "method": {
+            "type": "string",
+            "minLength": 1
+          },
+          "http": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599
+              },
+              "explicit": {
+                "type": "boolean",
+                "default": false
+              }
+            }
+          },
+          "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "contentTypes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "application/json",
+                    "multipart/form-data",
+                    "application/x-www-form-urlencoded"
+                  ]
+                },
+                "uniqueItems": true
+              },
+              "body": {
+                "$ref": "#/$defs/shapeNode"
+              },
+              "query": {
+                "$ref": "#/$defs/shapeNode"
+              },
+              "files": {
+                "$ref": "#/$defs/shapeNode"
+              },
+              "fields": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/requestField"
+                },
+                "default": []
+              }
+            }
+          },
+          "responses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "json_object",
+                    "json_array",
+                    "no_content",
+                    "redirect",
+                    "download",
+                    "stream",
+                    "inertia"
+                  ]
+                },
+                "status": {
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 599
+                },
+                "explicit": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "contentType": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "headers": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "bodySchema": {
+                  "$ref": "#/$defs/resourceSchemaNode"
+                },
+                "redirect": {
+                  "$ref": "#/$defs/responseRedirect"
+                },
+                "download": {
+                  "$ref": "#/$defs/responseDownload"
+                },
+                "inertia": {
+                  "$ref": "#/$defs/responseInertia"
+                },
+                "source": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "via": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "default": []
+          },
+          "authorization": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "source",
+                "resolution",
+                "enforcesFailureResponse"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ability": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "targetKind": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "target": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "parameter": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "resolution": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "enforcesFailureResponse": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "default": []
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "class",
+                "collection"
+              ],
+              "properties": {
+                "class": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "fqcn": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "collection": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "scopesUsed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "on",
+                "name"
+              ],
+              "properties": {
+                "on": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/argLiteral"
+                  },
+                  "default": []
+                }
+              }
+            }
+          },
+          "polymorphic": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/polymorphicRelation"
+            },
+            "default": []
+          }
+        }
+      },
+      "default": []
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fqcn"
+        ],
+        "properties": {
+          "fqcn": {
+            "type": "string",
+            "minLength": 1
+          },
+          "withPivot": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "relation",
+                "columns"
+              ],
+              "properties": {
+                "relation": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "columns": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "alias": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "timestamps": {
+                  "type": "boolean",
+                  "default": false
+                }
+              }
+            },
+            "default": []
+          },
+          "attributes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "via"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "via": {
+                  "type": "string",
+                  "enum": [
+                    "Attribute::make",
+                    "spatie/laravel-translatable"
+                  ]
+                }
+              }
+            },
+            "default": []
+          },
+          "polymorphic": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/polymorphicRelation"
+            },
+            "default": []
+          }
+        }
+      },
+      "default": []
+    },
+    "resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fqcn",
+          "class",
+          "schema"
+        ],
+        "properties": {
+          "fqcn": {
+            "type": "string",
+            "minLength": 1
+          },
+          "class": {
+            "type": "string",
+            "minLength": 1
+          },
+          "schema": {
+            "$ref": "#/$defs/resourceSchemaNode"
+          }
+        }
+      },
+      "default": []
+    },
+    "polymorphic": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "parent",
+          "morph",
+          "discriminator"
+        ],
+        "properties": {
+          "parent": {
+            "type": "string",
+            "minLength": 1
+          },
+          "morph": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "key",
+              "typeColumn",
+              "idColumn"
+            ],
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1
+              },
+              "typeColumn": {
+                "type": "string",
+                "minLength": 1
+              },
+              "idColumn": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "discriminator": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "propertyName",
+              "mapping"
+            ],
+            "properties": {
+              "propertyName": {
+                "type": "string",
+                "minLength": 1
+              },
+              "mapping": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          "depthTruncated": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "default": []
+    },
+    "broadcast": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channel",
+          "params",
+          "visibility"
+        ],
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string",
+            "minLength": 1
+          },
+          "params": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": []
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private",
+              "presence"
+            ]
+          },
+          "payloadLiteral": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "default": []
+    }
+  }
+}

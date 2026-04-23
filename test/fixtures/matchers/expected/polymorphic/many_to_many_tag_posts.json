@@ -1,0 +1,22 @@
+{
+  "relation": "posts",
+  "type": "morphedByMany",
+  "model": "App\\Models\\Post",
+  "morphType": "taggable_type",
+  "morphId": "taggable_id",
+  "discriminator": {
+    "propertyName": "taggable_type",
+    "mapping": {
+      "post": "App\\Models\\Post"
+    },
+    "source": "inferred",
+    "isExplicit": false
+  },
+  "depthTruncated": false,
+  "pattern": "morphedByMany_definition",
+  "method": "posts",
+  "context": "model_relationship",
+  "relatedModels": [
+    "App\\Models\\Post"
+  ]
+}

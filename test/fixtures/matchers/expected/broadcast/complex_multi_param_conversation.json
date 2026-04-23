@@ -1,0 +1,41 @@
+{
+  "channel": "conversation.{userId}.{conversationId}",
+  "type": "presence",
+  "pattern": "Broadcast::presence",
+  "hasCallback": true,
+  "parameters": [
+    {
+      "name": "userId",
+      "type": "route_parameter",
+      "position": 1
+    },
+    {
+      "name": "conversationId",
+      "type": "route_parameter",
+      "position": 2
+    }
+  ],
+  "visibility": "presence",
+  "authorization": {
+    "required": true,
+    "callback": "function ($user, $userId, $conversationId) { /* complex validation */ }",
+    "complexity": "multi_parameter_validation",
+    "userParameter": true,
+    "additionalParameters": ["userId", "conversationId"],
+    "returnsUserData": true,
+    "hasDatabaseQueries": true,
+    "hasConditionalLogic": true
+  },
+  "presenceData": {
+    "fields": ["id", "name", "avatar", "last_seen", "conversation_id", "user_id"],
+    "dynamic": true,
+    "conditional": true
+  },
+  "routeParameters": {
+    "count": 2,
+    "names": ["userId", "conversationId"],
+    "pattern": "conversation.{userId}.{conversationId}"
+  },
+  "complexity": "high",
+  "context": "broadcast_channel_definition"
+}

@@ -1,0 +1,13 @@
+{
+  "fqcn": "App\\Http\\Controllers\\SimpleController",
+  "method": "show",
+  "http": null,
+  "request": null,
+  "resources": [
+    {
+      "class": "App\\Http\\Resources\\UserResource",
+      "collection": false
+    }
+  ],
+  "scopesUsed": null
+}

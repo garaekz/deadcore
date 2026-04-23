@@ -1,0 +1,15 @@
+{
+  "project": {
+    "root": "../../test/fixtures/integration/minimal-laravel",
+    "composer": "composer.json"
+  },
+  "scan": {
+    "targets": ["app", "routes"],
+    "globs": ["**/*.php"]
+  },
+  "features": {
+    "http_status": true,
+    "request_usage": true,
+    "resource_usage": false
+  }
+}

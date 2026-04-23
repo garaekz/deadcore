@@ -1,0 +1,84 @@
+{
+  "meta": {
+    "partial": false,
+    "stats": {
+      "filesParsed": 5,
+      "skipped": 0,
+      "durationMs": 150
+    }
+  },
+  "controllers": [
+    {
+      "class": "App\\Http\\Controllers\\UserController",
+      "file": "app/Http/Controllers/UserController.php",
+      "methods": [
+        {
+          "name": "index",
+          "httpMethods": ["GET"],
+          "httpStatus": [200],
+          "requestUsage": []
+        },
+        {
+          "name": "store",
+          "httpMethods": ["POST"],
+          "httpStatus": [201],
+          "requestUsage": [
+            {
+              "method": "validate",
+              "rules": ["name", "email"]
+            }
+          ]
+        },
+        {
+          "name": "show",
+          "httpMethods": ["GET"],
+          "httpStatus": [200],
+          "requestUsage": []
+        },
+        {
+          "name": "update",
+          "httpMethods": ["PUT", "PATCH"],
+          "httpStatus": [200],
+          "requestUsage": [
+            {
+              "method": "validate",
+              "rules": ["name", "email"]
+            }
+          ]
+        },
+        {
+          "name": "destroy",
+          "httpMethods": ["DELETE"],
+          "httpStatus": [204],
+          "requestUsage": []
+        }
+      ]
+    }
+  ],
+  "models": [
+    {
+      "class": "App\\Models\\User",
+      "file": "app/Models/User.php",
+      "relationships": [
+        {
+          "name": "posts",
+          "type": "hasMany",
+          "related": "App\\Models\\Post"
+        }
+      ]
+    },
+    {
+      "class": "App\\Models\\Post",
+      "file": "app/Models/Post.php",
+      "relationships": [
+        {
+          "name": "user",
+          "type": "belongsTo",
+          "related": "App\\Models\\User"
+        }
+      ]
+    }
+  ],
+  "polymorphic": [],
+  "broadcast": []
+}

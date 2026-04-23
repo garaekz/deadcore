@@ -1,0 +1,49 @@
+{
+  "channel": "org.{orgId}.workspace.{workspaceId}.project.{projectId}",
+  "type": "presence",
+  "pattern": "Broadcast::presence",
+  "hasCallback": true,
+  "parameters": [
+    {
+      "name": "orgId",
+      "type": "route_parameter",
+      "position": 1
+    },
+    {
+      "name": "workspaceId",
+      "type": "route_parameter",
+      "position": 2
+    },
+    {
+      "name": "projectId",
+      "type": "route_parameter",
+      "position": 3
+    }
+  ],
+  "visibility": "presence",
+  "authorization": {
+    "required": true,
+    "callback": "function ($user, $orgId, $workspaceId, $projectId) { /* hierarchical validation */ }",
+    "complexity": "hierarchical_validation",
+    "userParameter": true,
+    "additionalParameters": ["orgId", "workspaceId", "projectId"],
+    "returnsUserData": true,
+    "hasDatabaseQueries": true,
+    "hasConditionalLogic": true,
+    "hasPermissionChecks": true
+  },
+  "presenceData": {
+    "fields": ["id", "name", "email", "avatar", "role", "permissions", "online_status", "timezone", "project_member_since"],
+    "dynamic": true,
+    "conditional": true,
+    "complex": true
+  },
+  "routeParameters": {
+    "count": 3,
+    "names": ["orgId", "workspaceId", "projectId"],
+    "pattern": "org.{orgId}.workspace.{workspaceId}.project.{projectId}",
+    "hierarchical": true
+  },
+  "complexity": "very_high",
+  "context": "broadcast_channel_definition"
+}

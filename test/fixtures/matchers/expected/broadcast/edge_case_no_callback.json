@@ -1,0 +1,15 @@
+{
+  "channel": "no-callback-channel",
+  "type": "public",
+  "pattern": "Broadcast::channel",
+  "hasCallback": false,
+  "parameters": [],
+  "visibility": "public",
+  "authorization": {
+    "required": false,
+    "callback": null,
+    "complexity": "none",
+    "alwaysAccessible": true
+  },
+  "context": "broadcast_channel_definition"
+}

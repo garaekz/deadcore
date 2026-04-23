@@ -1,0 +1,10 @@
+{
+  "project": {
+    "root": "../../test/fixtures/projects/test-laravel"
+  },
+  "analysis": {
+    "patterns": ["**/*.php"],
+    "unknown_field": "this should fail"
+  },
+  "unknown_top_level": "this should also fail"
+}

@@ -1,0 +1,14 @@
+{
+  "channel": "notifications",
+  "type": "public",
+  "pattern": "Broadcast::channel",
+  "hasCallback": true,
+  "parameters": [],
+  "visibility": "public",
+  "authorization": {
+    "required": false,
+    "callback": "function () { return true; }",
+    "complexity": "simple"
+  },
+  "context": "broadcast_channel_definition"
+}

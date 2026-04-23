@@ -1,0 +1,22 @@
+{
+  "relation": "tags",
+  "type": "morphToMany",
+  "model": "App\\Models\\Tag",
+  "morphType": "taggable_type",
+  "morphId": "taggable_id",
+  "discriminator": {
+    "propertyName": "taggable_type",
+    "mapping": {
+      "post": "App\\Models\\Post"
+    },
+    "source": "inferred",
+    "isExplicit": false
+  },
+  "depthTruncated": false,
+  "pattern": "morphToMany_definition",
+  "method": "tags",
+  "context": "model_relationship",
+  "relatedModels": [
+    "App\\Models\\Tag"
+  ]
+}

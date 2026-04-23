@@ -1,0 +1,20 @@
+{
+  "channel": "chat",
+  "type": "presence",
+  "pattern": "Broadcast::presence",
+  "hasCallback": true,
+  "parameters": [],
+  "visibility": "presence",
+  "authorization": {
+    "required": true,
+    "callback": "function ($user) { return array; }",
+    "complexity": "array_return",
+    "userParameter": true,
+    "returnsUserData": true
+  },
+  "presenceData": {
+    "fields": ["id", "name", "avatar"],
+    "dynamic": true
+  },
+  "context": "broadcast_channel_definition"
+}

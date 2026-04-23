@@ -1,0 +1,9 @@
+{
+  "name": "oxhq/oxcribe-auth-error-fixture",
+  "type": "project",
+  "autoload": {
+    "psr-4": {
+      "App\\": "app/"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "project": {
+    "root": "../test/fixtures/integration/api-project",
+    "composer": "composer.json"
+  },
+  "scan": {
+    "targets": ["app", "routes"],
+    "globs": ["**/*.php"]
+  },
+  "limits": {
+    "max_workers": 4,
+    "max_files": 1000,
+    "max_depth": 6
+  },
+  "features": {
+    "http_status": true,
+    "request_usage": true,
+    "resource_usage": true,
+    "with_pivot": true,
+    "attribute_make": true,
+    "scopes_used": true,
+    "polymorphic": true,
+    "broadcast_channels": true
+  }
+}

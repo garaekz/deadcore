@@ -1,0 +1,10 @@
+{
+  "project": {
+    "root": ".",
+    "composer": "composer.json",
+  },
+  "scan": {
+    "targets": ["app/"]
+  }
+  trailing garbage
+}

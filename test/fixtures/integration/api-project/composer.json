@@ -1,0 +1,27 @@
+{
+  "name": "test/api-project",
+  "type": "project",
+  "description": "API-focused Laravel project fixture for integration testing",
+  "require": {
+    "php": "^8.1",
+    "laravel/framework": "^10.0",
+    "laravel/sanctum": "^3.2"
+  },
+  "autoload": {
+    "psr-4": {
+      "App\\": "app/",
+      "Database\\Factories\\": "database/factories/",
+      "Database\\Seeders\\": "database/seeders/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Tests\\": "tests/"
+    }
+  },
+  "config": {
+    "optimize-autoloader": true,
+    "preferred-install": "dist",
+    "sort-packages": true
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "contractVersion": "oxcribe.oxinfer.v2",
+  "requestId": "req-golden-missing",
+  "runtimeFingerprint": "fp-golden-missing",
+  "manifest": {
+    "project": {
+      "root": "__FIXTURE_ROOT__",
+      "composer": "composer.json"
+    },
+    "scan": {
+      "targets": ["app", "routes"],
+      "globs": ["**/*.php"]
+    },
+    "features": {
+      "http_status": true,
+      "request_usage": true,
+      "resource_usage": false
+    }
+  },
+  "runtime": {
+    "app": {
+      "basePath": "__FIXTURE_ROOT__",
+      "laravelVersion": "10.0.0",
+      "phpVersion": "8.3.0",
+      "appEnv": "testing"
+    },
+    "routes": [
+      {
+        "routeId": "users.index",
+        "methods": ["GET"],
+        "uri": "users",
+        "domain": null,
+        "name": "users.index",
+        "prefix": "api",
+        "middleware": ["api"],
+        "where": {},
+        "defaults": {},
+        "bindings": [],
+        "action": {
+          "kind": "controller_method",
+          "fqcn": "App\\Http\\Controllers\\UserController",
+          "method": "index"
+        }
+      },
+      {
+        "routeId": "users.missing",
+        "methods": ["GET"],
+        "uri": "users/missing",
+        "domain": null,
+        "name": "users.missing",
+        "prefix": "api",
+        "middleware": ["api"],
+        "where": {},
+        "defaults": {},
+        "bindings": [],
+        "action": {
+          "kind": "controller_method",
+          "fqcn": "App\\Http\\Controllers\\UserController",
+          "method": "missing"
+        }
+      }
+    ]
+  }
+}

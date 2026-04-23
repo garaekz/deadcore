@@ -1,0 +1,34 @@
+{
+  "channel": "order.{orderId}.chat",
+  "type": "presence",
+  "pattern": "Broadcast::presence",
+  "hasCallback": true,
+  "parameters": [
+    {
+      "name": "orderId",
+      "type": "route_parameter",
+      "position": 1
+    }
+  ],
+  "visibility": "presence",
+  "authorization": {
+    "required": true,
+    "callback": "function ($user, $orderId) { /* database query and validation */ }",
+    "complexity": "database_query",
+    "userParameter": true,
+    "additionalParameters": ["orderId"],
+    "returnsUserData": true,
+    "hasDatabaseQueries": true
+  },
+  "presenceData": {
+    "fields": ["id", "name", "order_id"],
+    "dynamic": true,
+    "conditional": true
+  },
+  "routeParameters": {
+    "count": 1,
+    "names": ["orderId"],
+    "pattern": "order.{orderId}.chat"
+  },
+  "context": "broadcast_channel_definition"
+}

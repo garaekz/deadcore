@@ -1,0 +1,159 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset_os: linux
+            asset_arch: amd64
+            ext: ""
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            asset_os: darwin
+            asset_arch: amd64
+            ext: ""
+          - os: macos-15
+            target: aarch64-apple-darwin
+            asset_os: darwin
+            asset_arch: arm64
+            ext: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset_os: windows
+            asset_arch: amd64
+            ext: ".exe"
+
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --release --target "${{ matrix.target }}"
+          mkdir -p dist
+          tag="${GITHUB_REF_NAME}"
+          asset="oxinfer_${tag}_${{ matrix.asset_os }}_${{ matrix.asset_arch }}${{ matrix.ext }}"
+          cp "target/${{ matrix.target }}/release/oxinfer${{ matrix.ext }}" "dist/${asset}"
+
+      - name: Smoke release artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset="oxinfer_${GITHUB_REF_NAME}_${{ matrix.asset_os }}_${{ matrix.asset_arch }}${{ matrix.ext }}"
+          smoke_dir="${RUNNER_TEMP}/oxinfer-smoke-${{ matrix.asset_os }}-${{ matrix.asset_arch }}"
+          manifest_path="${smoke_dir}/minimal.cache.manifest.json"
+          cache_dir="${smoke_dir}/cache"
+          cold_output="${smoke_dir}/cold.json"
+          warm_output="${smoke_dir}/warm.json"
+          cold_stderr="${smoke_dir}/cold.stderr"
+          warm_stderr="${smoke_dir}/warm.stderr"
+
+          rm -rf "${smoke_dir}"
+          mkdir -p "${smoke_dir}" "${cache_dir}"
+
+          python - <<'PY' "${manifest_path}"
+          import json
+          import pathlib
+          import sys
+
+          manifest_path = pathlib.Path(sys.argv[1])
+          repo_root = pathlib.Path.cwd()
+          source_manifest = repo_root / "fixtures" / "minimal.manifest.json"
+          manifest = json.loads(source_manifest.read_text())
+          manifest["project"]["root"] = str((repo_root / "test" / "fixtures" / "integration" / "minimal-laravel").resolve())
+          manifest["cache"] = {
+              "enabled": True,
+              "kind": "sha256+mtime",
+          }
+          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+          PY
+
+          "dist/${asset}" --manifest "${manifest_path}" --cache-dir "${cache_dir}" --out "${cold_output}" --log-level info 2> "${cold_stderr}"
+          "dist/${asset}" --manifest "${manifest_path}" --cache-dir "${cache_dir}" --out "${warm_output}" --log-level info 2> "${warm_stderr}"
+
+          python - <<'PY' "${cold_output}" "${warm_output}" "${cold_stderr}" "${warm_stderr}"
+          import json
+          import pathlib
+          import re
+          import sys
+
+          cold_output = pathlib.Path(sys.argv[1])
+          warm_output = pathlib.Path(sys.argv[2])
+          cold_stderr = pathlib.Path(sys.argv[3]).read_text()
+          warm_stderr = pathlib.Path(sys.argv[4]).read_text()
+
+          def normalized_payload(path: pathlib.Path) -> dict:
+              payload = json.loads(path.read_text())
+              payload.get("meta", {}).get("stats", {}).pop("durationMs", None)
+              return payload
+
+          if normalized_payload(cold_output) != normalized_payload(warm_output):
+              raise SystemExit("warm cache output differed from cold cache output")
+
+          pattern = re.compile(r"cache=(\d+) hit\(s\), (\d+) miss\(es\)")
+          cold_match = pattern.search(cold_stderr)
+          warm_match = pattern.search(warm_stderr)
+
+          if cold_match is None or warm_match is None:
+              raise SystemExit("cache smoke logs did not include cache hit/miss stats")
+
+          cold_hits, cold_misses = map(int, cold_match.groups())
+          warm_hits, warm_misses = map(int, warm_match.groups())
+
+          if cold_hits != 0 or cold_misses == 0:
+              raise SystemExit(f"unexpected cold cache stats: hits={cold_hits} misses={cold_misses}")
+
+          if warm_hits == 0 or warm_misses != 0:
+              raise SystemExit(f"unexpected warm cache stats: hits={warm_hits} misses={warm_misses}")
+          PY
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oxinfer-${{ matrix.asset_os }}-${{ matrix.asset_arch }}
+          path: dist/*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Build checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum * > checksums.txt)
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*

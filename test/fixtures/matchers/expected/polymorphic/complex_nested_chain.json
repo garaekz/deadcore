@@ -1,0 +1,23 @@
+{
+  "relation": "relatedActivities",
+  "type": "morphMany", 
+  "model": "App\\Models\\ActivityLog",
+  "morphType": "subject_type",
+  "morphId": "subject_id",
+  "discriminator": {
+    "propertyName": "subject_type",
+    "mapping": {
+      "activity_log": "App\\Models\\ActivityLog"
+    },
+    "source": "inferred",
+    "isExplicit": false
+  },
+  "depthTruncated": false,
+  "maxDepth": 5,
+  "pattern": "morphMany_self_reference",
+  "method": "relatedActivities",
+  "context": "model_relationship",
+  "relatedModels": [
+    "App\\Models\\ActivityLog"
+  ]
+}

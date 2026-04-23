@@ -1,0 +1,15 @@
+{
+  "channel": "orders",
+  "type": "private",
+  "pattern": "Broadcast::private",
+  "hasCallback": true,
+  "parameters": [],
+  "visibility": "private",
+  "authorization": {
+    "required": true,
+    "callback": "function ($user) { return $user->hasRole('customer'); }",
+    "complexity": "method_call",
+    "userParameter": true
+  },
+  "context": "broadcast_channel_definition"
+}

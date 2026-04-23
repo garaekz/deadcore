@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oxcribe.dev/schema/manifest.schema.json",
+  "title": "Oxinfer Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["project", "scan"],
+  "properties": {
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root", "composer"],
+      "properties": {
+        "root": { "type": "string", "minLength": 1 },
+        "composer": { "type": "string", "minLength": 1 }
+      }
+    },
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targets"],
+      "properties": {
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "vendor_whitelist": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": []
+        },
+        "globs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": ["app/**/*.php", "routes/**/*.php"]
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_workers": { "type": "integer", "minimum": 1, "default": 8 },
+        "max_files": { "type": "integer", "minimum": 1, "default": 500 },
+        "max_depth": { "type": "integer", "minimum": 0, "default": 2 }
+      },
+      "default": {}
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "kind": {
+          "type": "string",
+          "enum": ["sha256+mtime", "mtime"],
+          "default": "sha256+mtime"
+        }
+      },
+      "default": {}
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "http_status": { "type": "boolean", "default": true },
+        "request_usage": { "type": "boolean", "default": true },
+        "resource_usage": { "type": "boolean", "default": true },
+        "with_pivot": { "type": "boolean", "default": true },
+        "attribute_make": { "type": "boolean", "default": true },
+        "scopes_used": { "type": "boolean", "default": true },
+        "polymorphic": { "type": "boolean", "default": true },
+        "broadcast_channels": { "type": "boolean", "default": true }
+      },
+      "default": {}
+    }
+  }
+}

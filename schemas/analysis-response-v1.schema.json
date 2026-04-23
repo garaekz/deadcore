@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oxcribe.dev/schema/analysis-response-v1.schema.json",
+  "title": "Oxinfer Analysis Response V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "requestId",
+    "runtimeFingerprint",
+    "status",
+    "meta",
+    "delta",
+    "routeMatches",
+    "diagnostics"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "oxcribe.oxinfer.v1"
+    },
+    "requestId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "runtimeFingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "partial"
+      ]
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "oxinferVersion",
+        "partial",
+        "stats",
+        "diagnosticCounts"
+      ],
+      "properties": {
+        "oxinferVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "partial": {
+          "type": "boolean"
+        },
+        "stats": {
+          "$ref": "#/$defs/metaStats"
+        },
+        "diagnosticCounts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "info",
+            "warn",
+            "error"
+          ],
+          "properties": {
+            "info": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "warn": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "error": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "delta": {
+      "$ref": "https://oxcribe.dev/schema/delta.schema.json"
+    },
+    "routeMatches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "routeId",
+          "actionKind",
+          "matchStatus"
+        ],
+        "properties": {
+          "routeId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actionKind": {
+            "type": "string",
+            "enum": [
+              "controller_method",
+              "invokable_controller",
+              "closure",
+              "unknown"
+            ]
+          },
+          "actionKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "matchStatus": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "runtime_only",
+              "unsupported",
+              "missing_static"
+            ]
+          },
+          "reasonCode": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "severity",
+          "scope",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warn",
+              "error"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "request",
+              "route",
+              "action",
+              "model",
+              "global"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "routeId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actionKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "file": {
+            "type": "string",
+            "minLength": 1
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "metaStats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filesParsed",
+        "skipped",
+        "durationMs"
+      ],
+      "properties": {
+        "filesParsed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skipped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalFiles": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "phaseStats": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "matchStats": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "errorCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "startTime": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "endTime": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inferenceOps": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "propertiesInferred": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cacheHits": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cacheMisses": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "assemblerStats": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "skippedControllers": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "skippedModels": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "skippedPatterns": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "unresolvableMatches": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}
