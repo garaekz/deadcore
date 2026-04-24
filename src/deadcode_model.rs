@@ -29,25 +29,47 @@ pub const FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS: &str = "unused_subscriber_cl
 pub const CONFIDENCE_HIGH: &str = "high";
 pub const CONFIDENCE_MEDIUM: &str = "medium";
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ReasonRecord {
+    pub code: String,
+    pub summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    #[serde(rename = "relatedSymbol", skip_serializing_if = "Option::is_none")]
+    pub related_symbol: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SymbolRecord {
     pub kind: String,
     pub symbol: String,
     pub file: String,
     #[serde(rename = "reachableFromRuntime")]
     pub reachable_from_runtime: bool,
+    #[serde(rename = "reasonSummary", skip_serializing_if = "Option::is_none")]
+    pub reason_summary: Option<String>,
+    #[serde(
+        rename = "reachabilityReasons",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub reachability_reasons: Vec<ReasonRecord>,
     #[serde(rename = "startLine", skip_serializing_if = "Option::is_none")]
     pub start_line: Option<usize>,
     #[serde(rename = "endLine", skip_serializing_if = "Option::is_none")]
     pub end_line: Option<usize>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Finding {
     pub symbol: String,
     pub category: String,
     pub confidence: String,
     pub file: String,
+    #[serde(rename = "reasonSummary", skip_serializing_if = "Option::is_none")]
+    pub reason_summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub evidence: Vec<ReasonRecord>,
     #[serde(rename = "startLine", skip_serializing_if = "Option::is_none")]
     pub start_line: Option<usize>,
     #[serde(rename = "endLine", skip_serializing_if = "Option::is_none")]

@@ -4,9 +4,9 @@ Local incubation fork of `oxinfer` for Laravel dead code analysis.
 
 This repo is a local-only fork used to build the Rust analysis core for Laravel dead code reachability, findings, and removal plans.
 
-## Phase 4 Request Mode
+## Phase 5 Request Mode
 
-The current verified slice now covers HTTP-adjacent reachability, the first execution surfaces beyond HTTP, and the first model-heavy Laravel inference:
+The current verified slice now covers HTTP-adjacent reachability, the first execution surfaces beyond HTTP, the first model-heavy Laravel inference, and additive explainability for why supported symbols stay alive or are reported dead:
 
 - controller methods reached from Laravel runtime route entrypoints plus supported direct call expansion
 - dead controller classes when all extracted controller methods are unreachable
@@ -40,6 +40,16 @@ The emitted `deadcode.analysis.v1` payload currently includes:
 - `findings`
 - `removalPlan`
 
+Reachable symbols can now carry:
+
+- `reasonSummary`
+- `reachabilityReasons`
+
+Dead findings can now carry:
+
+- `reasonSummary`
+- `evidence`
+
 Current limits:
 
 - `FormRequest` reachability is limited to explicit typed controller parameters
@@ -56,4 +66,5 @@ Current limits:
 - relationship reachability is limited to explicit access plus supported eager-loading patterns such as `with()`, `load()`, and `loadMissing()`
 - accessor reachability is limited to explicit attribute reads plus append-driven serialization support
 - mutator reachability is limited to explicit attribute writes, `setAttribute(...)`, and supported bulk write paths such as `fill`, `update`, `create`, `firstOrCreate`, `updateOrCreate`, and constructor hydration
+- reason summaries and evidence are intentionally compact and category-level; this repo does not yet expose full internal call chains
 - model-heavy findings are additive under `deadcode.analysis.v1`, but this repo alone does not claim they are stage-safe in the Laravel package

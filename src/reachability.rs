@@ -11,7 +11,8 @@ use crate::deadcode_model::{
     FINDING_CATEGORY_UNUSED_MODEL_METHOD, FINDING_CATEGORY_UNUSED_MODEL_MUTATOR,
     FINDING_CATEGORY_UNUSED_MODEL_RELATIONSHIP, FINDING_CATEGORY_UNUSED_MODEL_SCOPE,
     FINDING_CATEGORY_UNUSED_POLICY_CLASS, FINDING_CATEGORY_UNUSED_RESOURCE_CLASS,
-    FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding, SYMBOL_KIND_COMMAND_CLASS,
+    FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding, ReasonRecord,
+    SYMBOL_KIND_COMMAND_CLASS,
     SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD, SYMBOL_KIND_FORM_REQUEST_CLASS,
     SYMBOL_KIND_JOB_CLASS, SYMBOL_KIND_LISTENER_CLASS, SYMBOL_KIND_MODEL_ACCESSOR,
     SYMBOL_KIND_MODEL_METHOD, SYMBOL_KIND_MODEL_MUTATOR, SYMBOL_KIND_MODEL_RELATIONSHIP,
@@ -41,6 +42,265 @@ struct ControllerClassReport {
     relative_path: String,
     reachable_from_runtime: bool,
     line_range: Option<(usize, usize)>,
+}
+
+fn reason(code: &str, summary: &str) -> ReasonRecord {
+    ReasonRecord {
+        code: code.to_string(),
+        summary: summary.to_string(),
+        ..Default::default()
+    }
+}
+
+fn build_symbol_record(
+    kind: &str,
+    symbol: String,
+    file: String,
+    reachable_from_runtime: bool,
+    start_line: Option<usize>,
+    end_line: Option<usize>,
+) -> SymbolRecord {
+    let (reason_summary, reachability_reasons) = if reachable_from_runtime {
+        match kind {
+            SYMBOL_KIND_CONTROLLER_METHOD => (
+                Some(
+                    "Reachable through Laravel runtime routing or supported controller call expansion."
+                        .to_string(),
+                ),
+                vec![reason(
+                    "supported_controller_reachability",
+                    "Laravel runtime routes or supported controller call expansion keep this controller method alive.",
+                )],
+            ),
+            SYMBOL_KIND_CONTROLLER_CLASS => (
+                Some("Reachable because at least one extracted controller method is still alive.".to_string()),
+                vec![reason(
+                    "reachable_controller_method",
+                    "At least one extracted controller method remains reachable, so the controller class is kept alive.",
+                )],
+            ),
+            SYMBOL_KIND_FORM_REQUEST_CLASS => (
+                Some("Reachable through a supported typed controller parameter.".to_string()),
+                vec![reason(
+                    "typed_controller_parameter",
+                    "A reachable controller method uses this FormRequest as an explicit typed parameter.",
+                )],
+            ),
+            SYMBOL_KIND_RESOURCE_CLASS => (
+                Some("Reachable through supported controller resource usage.".to_string()),
+                vec![reason(
+                    "supported_resource_usage",
+                    "A reachable controller method returns or references this resource through a supported pattern.",
+                )],
+            ),
+            SYMBOL_KIND_COMMAND_CLASS => (
+                Some("Reachable through runtime command registration.".to_string()),
+                vec![reason(
+                    "runtime_command",
+                    "Laravel runtime command registration keeps this command class alive.",
+                )],
+            ),
+            SYMBOL_KIND_LISTENER_CLASS => (
+                Some("Reachable through runtime listener registration.".to_string()),
+                vec![reason(
+                    "runtime_listener",
+                    "Laravel runtime listener registration keeps this listener class alive.",
+                )],
+            ),
+            SYMBOL_KIND_SUBSCRIBER_CLASS => (
+                Some("Reachable through explicit runtime subscriber registration.".to_string()),
+                vec![reason(
+                    "runtime_subscriber",
+                    "Explicit Laravel runtime subscriber registration keeps this subscriber alive.",
+                )],
+            ),
+            SYMBOL_KIND_JOB_CLASS => (
+                Some("Reachable through supported explicit job dispatch patterns.".to_string()),
+                vec![reason(
+                    "supported_job_dispatch",
+                    "A supported explicit job dispatch pattern keeps this job class alive.",
+                )],
+            ),
+            SYMBOL_KIND_POLICY_CLASS => (
+                Some("Reachable through the runtime Gate policy map.".to_string()),
+                vec![reason(
+                    "runtime_policy_map",
+                    "The Laravel Gate policy map keeps this policy class alive.",
+                )],
+            ),
+            SYMBOL_KIND_MODEL_METHOD => (
+                Some("Reachable through a supported explicit model call from already-reachable code.".to_string()),
+                vec![reason(
+                    "supported_explicit_model_call",
+                    "Already-reachable code calls this model helper through a supported explicit pattern.",
+                )],
+            ),
+            SYMBOL_KIND_MODEL_SCOPE => (
+                Some("Reachable through a supported explicit scope-call pattern.".to_string()),
+                vec![reason(
+                    "supported_scope_call",
+                    "A supported explicit scope-call pattern keeps this local scope alive.",
+                )],
+            ),
+            SYMBOL_KIND_MODEL_RELATIONSHIP => (
+                Some("Reachable through supported explicit relationship access or eager loading.".to_string()),
+                vec![reason(
+                    "supported_relationship_usage",
+                    "Supported explicit relationship access or eager-loading patterns keep this relationship alive.",
+                )],
+            ),
+            SYMBOL_KIND_MODEL_ACCESSOR => (
+                Some("Reachable through supported explicit attribute reads or append metadata.".to_string()),
+                vec![reason(
+                    "supported_attribute_read",
+                    "Supported explicit attribute reads or append metadata keep this accessor alive.",
+                )],
+            ),
+            SYMBOL_KIND_MODEL_MUTATOR => (
+                Some("Reachable through supported explicit attribute writes.".to_string()),
+                vec![reason(
+                    "supported_attribute_write",
+                    "Supported explicit attribute writes keep this mutator alive.",
+                )],
+            ),
+            _ => (None, Vec::new()),
+        }
+    } else {
+        (None, Vec::new())
+    };
+
+    SymbolRecord {
+        kind: kind.to_string(),
+        symbol,
+        file,
+        reachable_from_runtime,
+        reason_summary,
+        reachability_reasons,
+        start_line,
+        end_line,
+    }
+}
+
+fn build_finding(
+    symbol: String,
+    category: &str,
+    confidence: String,
+    file: String,
+    start_line: Option<usize>,
+    end_line: Option<usize>,
+) -> Finding {
+    let (reason_summary, evidence) = match category {
+        FINDING_CATEGORY_UNUSED_CONTROLLER_METHOD => (
+            Some("No runtime route or supported controller call keeps this method alive.".to_string()),
+            vec![reason(
+                "no_supported_controller_reachability",
+                "No Laravel runtime route or supported controller call expansion reaches this controller method.",
+            )],
+        ),
+        FINDING_CATEGORY_UNUSED_CONTROLLER_CLASS => (
+            Some("All extracted controller methods are currently unreachable.".to_string()),
+            vec![reason(
+                "no_reachable_controller_methods",
+                "Every extracted controller method is currently unreachable, so the controller class is dead.",
+            )],
+        ),
+        FINDING_CATEGORY_UNUSED_FORM_REQUEST => (
+            Some("No supported typed controller parameter reaches this FormRequest.".to_string()),
+            vec![reason(
+                "no_supported_form_request_usage",
+                "No reachable controller method uses this FormRequest as a supported explicit typed parameter.",
+            )],
+        ),
+        FINDING_CATEGORY_UNUSED_RESOURCE_CLASS => (
+            Some("No supported controller resource usage reaches this resource.".to_string()),
+            vec![reason(
+                "no_supported_resource_usage",
+                "No reachable controller method references this resource through a supported pattern.",
+            )],
+        ),
+        FINDING_CATEGORY_UNUSED_COMMAND_CLASS => (
+            Some("This command is absent from runtime command registration.".to_string()),
+            vec![reason(
+                "not_runtime_registered_command",
+                "Laravel runtime command registration does not include this command class.",
+            )],
+        ),
+        FINDING_CATEGORY_UNUSED_LISTENER_CLASS => (
+            Some("This listener is absent from runtime listener registration.".to_string()),
+            vec![reason(
+                "not_runtime_registered_listener",
+                "Laravel runtime listener registration does not include this listener class.",
+            )],
+        ),
+        FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS => (
+            Some("This subscriber is absent from explicit runtime subscriber registration.".to_string()),
+            vec![reason(
+                "not_runtime_registered_subscriber",
+                "Explicit Laravel runtime subscriber registration does not include this subscriber class.",
+            )],
+        ),
+        FINDING_CATEGORY_UNUSED_JOB_CLASS => (
+            Some("No supported explicit dispatch pattern reaches this job class.".to_string()),
+            vec![reason(
+                "no_supported_job_dispatch",
+                "No supported explicit job dispatch pattern reaches this job class.",
+            )],
+        ),
+        FINDING_CATEGORY_UNUSED_POLICY_CLASS => (
+            Some("This policy is absent from the runtime Gate policy map.".to_string()),
+            vec![reason(
+                "not_runtime_policy_map",
+                "The Laravel Gate policy map does not reference this policy class.",
+            )],
+        ),
+        FINDING_CATEGORY_UNUSED_MODEL_METHOD => (
+            Some("No supported explicit model call from already-reachable code reaches this method.".to_string()),
+            vec![reason(
+                "no_supported_model_call",
+                "No supported explicit model helper call from already-reachable code reaches this method.",
+            )],
+        ),
+        FINDING_CATEGORY_UNUSED_MODEL_SCOPE => (
+            Some("No supported explicit scope-call pattern reaches this local scope.".to_string()),
+            vec![reason(
+                "no_supported_scope_call",
+                "No supported explicit scope-call pattern reaches this local scope.",
+            )],
+        ),
+        FINDING_CATEGORY_UNUSED_MODEL_RELATIONSHIP => (
+            Some("No supported explicit relationship access or eager loading reaches this relationship.".to_string()),
+            vec![reason(
+                "no_supported_relationship_usage",
+                "No supported explicit relationship access or eager-loading pattern reaches this relationship.",
+            )],
+        ),
+        FINDING_CATEGORY_UNUSED_MODEL_ACCESSOR => (
+            Some("No supported explicit attribute read or append metadata reaches this accessor.".to_string()),
+            vec![reason(
+                "no_supported_attribute_read",
+                "No supported explicit attribute read or append metadata reaches this accessor.",
+            )],
+        ),
+        FINDING_CATEGORY_UNUSED_MODEL_MUTATOR => (
+            Some("No supported explicit attribute write reaches this mutator.".to_string()),
+            vec![reason(
+                "no_supported_attribute_write",
+                "No supported explicit attribute write reaches this mutator.",
+            )],
+        ),
+        _ => (None, Vec::new()),
+    };
+
+    Finding {
+        symbol,
+        category: category.to_string(),
+        confidence,
+        file,
+        reason_summary,
+        evidence,
+        start_line,
+        end_line,
+    }
 }
 
 pub fn analyze_controller_reachability(
@@ -216,6 +476,7 @@ pub fn analyze_controller_reachability(
             reachable_from_runtime,
             start_line,
             end_line,
+            ..Default::default()
         });
 
         controller_classes
@@ -241,6 +502,7 @@ pub fn analyze_controller_reachability(
             file: file.relative_path.clone(),
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
@@ -266,6 +528,7 @@ pub fn analyze_controller_reachability(
             reachable_from_runtime: report.reachable_from_runtime,
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if report.reachable_from_runtime {
@@ -279,6 +542,7 @@ pub fn analyze_controller_reachability(
             file: report.relative_path.clone(),
             start_line,
             end_line,
+            ..Default::default()
         });
 
         fully_dead_controller_classes.insert(report.fqcn.clone());
@@ -310,6 +574,7 @@ pub fn analyze_controller_reachability(
                     reachable_from_runtime,
                     start_line,
                     end_line,
+                    ..Default::default()
                 });
 
                 if reachable_from_runtime {
@@ -323,6 +588,7 @@ pub fn analyze_controller_reachability(
                     file: file.relative_path.clone(),
                     start_line,
                     end_line,
+                    ..Default::default()
                 });
             }
 
@@ -341,6 +607,7 @@ pub fn analyze_controller_reachability(
                     reachable_from_runtime,
                     start_line,
                     end_line,
+                    ..Default::default()
                 });
 
                 if reachable_from_runtime {
@@ -354,6 +621,7 @@ pub fn analyze_controller_reachability(
                     file: file.relative_path.clone(),
                     start_line,
                     end_line,
+                    ..Default::default()
                 });
             }
 
@@ -372,6 +640,7 @@ pub fn analyze_controller_reachability(
                     reachable_from_runtime,
                     start_line,
                     end_line,
+                    ..Default::default()
                 });
 
                 if reachable_from_runtime {
@@ -385,6 +654,7 @@ pub fn analyze_controller_reachability(
                     file: file.relative_path.clone(),
                     start_line,
                     end_line,
+                    ..Default::default()
                 });
 
                 if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
@@ -412,6 +682,7 @@ pub fn analyze_controller_reachability(
                     reachable_from_runtime,
                     start_line,
                     end_line,
+                    ..Default::default()
                 });
 
                 if reachable_from_runtime {
@@ -425,6 +696,7 @@ pub fn analyze_controller_reachability(
                     file: file.relative_path.clone(),
                     start_line,
                     end_line,
+                    ..Default::default()
                 });
 
                 if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
@@ -452,6 +724,7 @@ pub fn analyze_controller_reachability(
                     reachable_from_runtime,
                     start_line,
                     end_line,
+                    ..Default::default()
                 });
 
                 if reachable_from_runtime {
@@ -465,6 +738,7 @@ pub fn analyze_controller_reachability(
                     file: file.relative_path.clone(),
                     start_line,
                     end_line,
+                    ..Default::default()
                 });
 
                 if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
@@ -504,6 +778,7 @@ pub fn analyze_controller_reachability(
             reachable_from_runtime,
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if reachable_from_runtime {
@@ -517,6 +792,7 @@ pub fn analyze_controller_reachability(
             file: class.relative_path.clone(),
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
@@ -546,6 +822,7 @@ pub fn analyze_controller_reachability(
             reachable_from_runtime,
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if reachable_from_runtime {
@@ -559,6 +836,7 @@ pub fn analyze_controller_reachability(
             file: class.relative_path.clone(),
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
@@ -588,6 +866,7 @@ pub fn analyze_controller_reachability(
             reachable_from_runtime,
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if reachable_from_runtime {
@@ -601,6 +880,7 @@ pub fn analyze_controller_reachability(
             file: class.relative_path.clone(),
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
@@ -632,6 +912,7 @@ pub fn analyze_controller_reachability(
             reachable_from_runtime,
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if reachable_from_runtime {
@@ -645,6 +926,7 @@ pub fn analyze_controller_reachability(
             file: class.relative_path.clone(),
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if let Some((start_line, end_line)) = removal_range {
@@ -675,6 +957,7 @@ pub fn analyze_controller_reachability(
             reachable_from_runtime,
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if reachable_from_runtime {
@@ -689,6 +972,7 @@ pub fn analyze_controller_reachability(
             file: class.relative_path.clone(),
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if let Some((start_line, end_line)) = removal_range {
@@ -719,6 +1003,7 @@ pub fn analyze_controller_reachability(
             reachable_from_runtime,
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if reachable_from_runtime {
@@ -733,6 +1018,7 @@ pub fn analyze_controller_reachability(
             file: class.relative_path.clone(),
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if let Some((start_line, end_line)) = removal_range {
@@ -763,6 +1049,7 @@ pub fn analyze_controller_reachability(
             reachable_from_runtime,
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if reachable_from_runtime {
@@ -777,6 +1064,7 @@ pub fn analyze_controller_reachability(
             file: class.relative_path.clone(),
             start_line,
             end_line,
+            ..Default::default()
         });
 
         if let Some((start_line, end_line)) = removal_range {
@@ -787,6 +1075,42 @@ pub fn analyze_controller_reachability(
                 end_line,
             });
         }
+    }
+
+    for symbol in &mut symbols {
+        if symbol.reason_summary.is_some() || !symbol.reachable_from_runtime {
+            continue;
+        }
+
+        let enriched = build_symbol_record(
+            &symbol.kind,
+            symbol.symbol.clone(),
+            symbol.file.clone(),
+            symbol.reachable_from_runtime,
+            symbol.start_line,
+            symbol.end_line,
+        );
+
+        symbol.reason_summary = enriched.reason_summary;
+        symbol.reachability_reasons = enriched.reachability_reasons;
+    }
+
+    for finding in &mut findings {
+        if finding.reason_summary.is_some() {
+            continue;
+        }
+
+        let enriched = build_finding(
+            finding.symbol.clone(),
+            &finding.category,
+            finding.confidence.clone(),
+            finding.file.clone(),
+            finding.start_line,
+            finding.end_line,
+        );
+
+        finding.reason_summary = enriched.reason_summary;
+        finding.evidence = enriched.evidence;
     }
 
     entrypoints

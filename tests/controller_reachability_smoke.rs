@@ -62,6 +62,36 @@ fn reports_unused_controller_method_when_not_reachable_from_runtime_or_static_ca
         "reachable controller method should not be flagged, payload: {}",
         payload
     );
+
+    let symbols = payload["symbols"]
+        .as_array()
+        .expect("symbols should be an array");
+
+    let reachable_symbol = symbols
+        .iter()
+        .find(|symbol| symbol["symbol"] == "App\\Http\\Controllers\\UserController::index")
+        .expect("reachable controller method symbol should exist");
+    assert_eq!(
+        reachable_symbol["reasonSummary"],
+        "Reachable through Laravel runtime routing or supported controller call expansion."
+    );
+    assert_eq!(
+        reachable_symbol["reachabilityReasons"][0]["code"],
+        "supported_controller_reachability"
+    );
+
+    let dead_finding = findings
+        .iter()
+        .find(|finding| finding["symbol"] == "App\\Http\\Controllers\\UserController::unused")
+        .expect("dead controller finding should exist");
+    assert_eq!(
+        dead_finding["reasonSummary"],
+        "No runtime route or supported controller call keeps this method alive."
+    );
+    assert_eq!(
+        dead_finding["evidence"][0]["code"],
+        "no_supported_controller_reachability"
+    );
 }
 
 #[test]
