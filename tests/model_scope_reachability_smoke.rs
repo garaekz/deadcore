@@ -67,4 +67,10 @@ fn reports_unused_model_scope() {
         "expected unused model scope finding, payload: {}",
         payload
     );
+
+    assert!(
+        !findings.iter().any(|finding| finding["symbol"] == "App\\Models\\Post::published"),
+        "reachable model scope should not be flagged as unused, payload: {}",
+        payload
+    );
 }
