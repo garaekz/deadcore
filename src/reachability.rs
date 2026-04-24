@@ -7,11 +7,12 @@ use crate::deadcode_model::{
     CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, FINDING_CATEGORY_UNUSED_COMMAND_CLASS,
     FINDING_CATEGORY_UNUSED_CONTROLLER_CLASS, FINDING_CATEGORY_UNUSED_CONTROLLER_METHOD,
     FINDING_CATEGORY_UNUSED_FORM_REQUEST, FINDING_CATEGORY_UNUSED_JOB_CLASS,
-    FINDING_CATEGORY_UNUSED_LISTENER_CLASS, FINDING_CATEGORY_UNUSED_RESOURCE_CLASS,
-    FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding, SYMBOL_KIND_COMMAND_CLASS,
-    SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD, SYMBOL_KIND_FORM_REQUEST_CLASS,
-    SYMBOL_KIND_JOB_CLASS, SYMBOL_KIND_LISTENER_CLASS, SYMBOL_KIND_RESOURCE_CLASS,
-    SYMBOL_KIND_SUBSCRIBER_CLASS, SymbolRecord,
+    FINDING_CATEGORY_UNUSED_LISTENER_CLASS, FINDING_CATEGORY_UNUSED_POLICY_CLASS,
+    FINDING_CATEGORY_UNUSED_RESOURCE_CLASS, FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding,
+    SYMBOL_KIND_COMMAND_CLASS, SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD,
+    SYMBOL_KIND_FORM_REQUEST_CLASS, SYMBOL_KIND_JOB_CLASS, SYMBOL_KIND_LISTENER_CLASS,
+    SYMBOL_KIND_POLICY_CLASS, SYMBOL_KIND_RESOURCE_CLASS, SYMBOL_KIND_SUBSCRIBER_CLASS,
+    SymbolRecord,
 };
 use crate::model::{AnalyzedFile, ControllerMethod};
 use crate::parser::line_range_for_span;
@@ -89,6 +90,14 @@ pub fn analyze_controller_reachability(
         });
     }
 
+    for policy in &request.runtime.policies {
+        entrypoints.push(Entrypoint {
+            kind: "runtime_policy".to_string(),
+            symbol: policy.policy_fqcn.clone(),
+            source: policy.model_fqcn.clone(),
+        });
+    }
+
     while let Some(symbol) = worklist.pop_front() {
         let Some(callees) = call_graph.get(&symbol) else {
             continue;
@@ -114,6 +123,12 @@ pub fn analyze_controller_reachability(
         .listeners
         .iter()
         .map(|listener| listener.listener_fqcn.clone())
+        .collect::<BTreeSet<_>>();
+    let reachable_policies = request
+        .runtime
+        .policies
+        .iter()
+        .map(|policy| policy.policy_fqcn.clone())
         .collect::<BTreeSet<_>>();
     let reachable_subscribers = request
         .runtime
@@ -350,6 +365,50 @@ pub fn analyze_controller_reachability(
         });
 
         if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
+            change_sets.push(RemovalChangeSet {
+                file: class.relative_path.clone(),
+                symbol: class.fqcn.clone(),
+                start_line,
+                end_line,
+            });
+        }
+    }
+
+    for class in source_index.classes.values() {
+        if !is_policy_class(class, &reachable_policies) {
+            continue;
+        }
+
+        let line_range = find_class_line_range(class);
+        let (start_line, end_line) = line_range
+            .map(|(start, end)| (Some(start), Some(end)))
+            .unwrap_or((None, None));
+        let reachable_from_runtime = reachable_policies.contains(&class.fqcn);
+        let removal_range = explicit_policy_removal_range(class);
+
+        symbols.push(SymbolRecord {
+            kind: SYMBOL_KIND_POLICY_CLASS.to_string(),
+            symbol: class.fqcn.clone(),
+            file: class.relative_path.clone(),
+            reachable_from_runtime,
+            start_line,
+            end_line,
+        });
+
+        if reachable_from_runtime {
+            continue;
+        }
+
+        findings.push(Finding {
+            symbol: class.fqcn.clone(),
+            category: FINDING_CATEGORY_UNUSED_POLICY_CLASS.to_string(),
+            confidence: policy_class_confidence(class, removal_range).to_string(),
+            file: class.relative_path.clone(),
+            start_line,
+            end_line,
+        });
+
+        if let Some((start_line, end_line)) = removal_range {
             change_sets.push(RemovalChangeSet {
                 file: class.relative_path.clone(),
                 symbol: class.fqcn.clone(),
@@ -700,6 +759,14 @@ fn is_resource_fqcn(
     is_resource_fqcn(extends, source_index, visited)
 }
 
+fn is_policy_class(class: &SourceClass, reachable_policies: &BTreeSet<String>) -> bool {
+    if reachable_policies.contains(&class.fqcn) {
+        return true;
+    }
+
+    class.relative_path.starts_with("app/Policies/") && !class.fqcn.is_empty()
+}
+
 fn is_command_class(
     class: &SourceClass,
     source_index: &SourceIndex,
@@ -741,6 +808,30 @@ fn command_class_confidence(
     } else {
         CONFIDENCE_MEDIUM
     }
+}
+
+fn policy_class_confidence(
+    class: &SourceClass,
+    removal_range: Option<(usize, usize)>,
+) -> &'static str {
+    if removal_range.is_some()
+        && class.relative_path.starts_with("app/Policies/")
+        && class_declaration_count(&class.source_text) == 1
+    {
+        CONFIDENCE_HIGH
+    } else {
+        CONFIDENCE_MEDIUM
+    }
+}
+
+fn explicit_policy_removal_range(class: &SourceClass) -> Option<(usize, usize)> {
+    if !class.relative_path.starts_with("app/Policies/")
+        || class_declaration_count(&class.source_text) != 1
+    {
+        return None;
+    }
+
+    find_class_line_range(class)
 }
 
 fn listener_class_confidence(
