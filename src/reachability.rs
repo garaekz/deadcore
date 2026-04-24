@@ -70,6 +70,7 @@ pub fn analyze_controller_reachability(
     let mut symbols = Vec::new();
     let mut findings = Vec::new();
     let mut change_sets = Vec::new();
+    let mut fully_dead_controller_classes = BTreeSet::new();
     let mut controller_classes = BTreeMap::<String, ControllerClassReport>::new();
 
     for (file, controller) in result.controller_methods() {
@@ -152,6 +153,8 @@ pub fn analyze_controller_reachability(
             end_line,
         });
 
+        fully_dead_controller_classes.insert(report.fqcn.clone());
+
         if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
             change_sets.push(RemovalChangeSet {
                 file: report.relative_path,
@@ -160,6 +163,14 @@ pub fn analyze_controller_reachability(
                 end_line,
             });
         }
+    }
+
+    if !fully_dead_controller_classes.is_empty() {
+        change_sets.retain(|change_set| {
+            !fully_dead_controller_classes
+                .iter()
+                .any(|fqcn| change_set.symbol.starts_with(&format!("{fqcn}::")))
+        });
     }
 
     for class in source_index.classes.values() {

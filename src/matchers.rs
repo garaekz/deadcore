@@ -321,11 +321,12 @@ fn detect_request_usage(
     let request_param_re =
         Regex::new(r#"([A-Z][A-Za-z0-9_\\]*Request)\s+\$([A-Za-z_][A-Za-z0-9_]*)"#)
             .expect("request param regex");
+    let method_signature = method_text.split('{').next().unwrap_or(method_text);
 
     let mut usage = Vec::new();
     let mut seen_request_classes = BTreeSet::new();
 
-    for captures in request_param_re.captures_iter(method_text) {
+    for captures in request_param_re.captures_iter(method_signature) {
         let Some(class_name) = captures.get(1) else {
             continue;
         };
