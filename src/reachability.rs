@@ -110,11 +110,6 @@ pub fn analyze_controller_reachability(
         }
     }
 
-    let reachable_form_requests =
-        collect_reachable_form_requests(result, &source_index, &reachable_actions);
-    let reachable_resources = collect_reachable_resources(result, &reachable_actions);
-    let reachable_model_methods =
-        collect_reachable_model_methods(result, &source_index, &reachable_actions);
     let reachable_commands = request
         .runtime
         .commands
@@ -144,6 +139,19 @@ pub fn analyze_controller_reachability(
         &source_index,
         &reachable_actions,
         &request.runtime.jobs,
+    );
+    let reachable_form_requests =
+        collect_reachable_form_requests(result, &source_index, &reachable_actions);
+    let reachable_resources = collect_reachable_resources(result, &reachable_actions);
+    let reachable_model_methods = collect_reachable_model_methods(
+        result,
+        &source_index,
+        &reachable_actions,
+        &reachable_commands,
+        &reachable_listeners,
+        &reachable_subscribers,
+        &reachable_jobs,
+        &reachable_policies,
     );
     let mut symbols = Vec::new();
     let mut findings = Vec::new();
@@ -661,6 +669,11 @@ fn collect_reachable_model_methods(
     result: &PipelineResult,
     source_index: &SourceIndex,
     reachable_actions: &BTreeSet<String>,
+    reachable_commands: &BTreeSet<String>,
+    reachable_listeners: &BTreeSet<String>,
+    reachable_subscribers: &BTreeSet<String>,
+    reachable_jobs: &BTreeSet<String>,
+    reachable_policies: &BTreeSet<String>,
 ) -> BTreeSet<String> {
     let model_methods = result
         .files
@@ -689,9 +702,31 @@ fn collect_reachable_model_methods(
             continue;
         };
 
-        for (model_fqcn, method_name) in
-            extract_called_model_methods(controller, source_class, &model_methods)
-        {
+        for (model_fqcn, method_name) in extract_called_model_methods_from_text(
+            &controller.body_text,
+            source_class,
+            &model_methods,
+        ) {
+            reachable_model_methods.insert(format!("{model_fqcn}::{method_name}"));
+        }
+    }
+
+    for fqcn in reachable_commands
+        .iter()
+        .chain(reachable_listeners.iter())
+        .chain(reachable_subscribers.iter())
+        .chain(reachable_jobs.iter())
+        .chain(reachable_policies.iter())
+    {
+        let Some(source_class) = source_index.get(fqcn) else {
+            continue;
+        };
+
+        for (model_fqcn, method_name) in extract_called_model_methods_from_text(
+            &source_class.source_text,
+            source_class,
+            &model_methods,
+        ) {
             reachable_model_methods.insert(format!("{model_fqcn}::{method_name}"));
         }
     }
@@ -1146,18 +1181,18 @@ fn collect_controller_callees(
     callees
 }
 
-fn extract_called_model_methods(
-    controller: &ControllerMethod,
+fn extract_called_model_methods_from_text(
+    text: &str,
     source_class: &SourceClass,
     model_methods: &BTreeMap<String, BTreeSet<String>>,
 ) -> BTreeSet<(String, String)> {
     let mut called = BTreeSet::new();
-    let mut model_variables = collect_model_variables(controller, source_class, model_methods);
+    let model_variables = collect_model_variables_from_text(text, source_class, model_methods);
 
     let instance_call_re =
         Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
             .expect("model instance call regex");
-    for captures in instance_call_re.captures_iter(&controller.body_text) {
+    for captures in instance_call_re.captures_iter(text) {
         let Some(variable_name) = captures.get(1) else {
             continue;
         };
@@ -1177,7 +1212,7 @@ fn extract_called_model_methods(
 
     let static_call_re = Regex::new(r#"([A-Z][A-Za-z0-9_\\]*)::([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
         .expect("model static call regex");
-    for captures in static_call_re.captures_iter(&controller.body_text) {
+    for captures in static_call_re.captures_iter(text) {
         let Some(class_name) = captures.get(1) else {
             continue;
         };
@@ -1193,44 +1228,68 @@ fn extract_called_model_methods(
         }
     }
 
-    model_variables.clear();
     called
 }
 
-fn collect_model_variables(
-    controller: &ControllerMethod,
+fn collect_model_variables_from_text(
+    text: &str,
     source_class: &SourceClass,
     model_methods: &BTreeMap<String, BTreeSet<String>>,
 ) -> BTreeMap<String, String> {
     let mut variables = BTreeMap::new();
-    let signature_re =
-        Regex::new(r#"function\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*)\)"#).expect("signature regex");
-    let parameter_re = Regex::new(r#"(?:(\??[A-Z][A-Za-z0-9_\\]*)\s+)?\$([A-Za-z_][A-Za-z0-9_]*)"#)
+    let parameter_re = Regex::new(r#"(?:(\??[A-Z][A-Za-z0-9_\\]*)\s+)\$([A-Za-z_][A-Za-z0-9_]*)"#)
         .expect("parameter regex");
-    if let Some(captures) = signature_re.captures(&controller.body_text) {
-        if let Some(group) = captures.get(1) {
-            for parameter in group.as_str().split(',') {
-                let Some(captures) = parameter_re.captures(parameter.trim()) else {
-                    continue;
-                };
-                let Some(raw_type) = captures.get(1) else {
-                    continue;
-                };
-                let Some(variable_name) = captures.get(2) else {
-                    continue;
-                };
-                let resolved = source_class.resolve_name(raw_type.as_str().trim_start_matches('?'));
-                if model_methods.contains_key(&resolved) {
-                    variables.insert(variable_name.as_str().to_string(), resolved);
-                }
-            }
+    for captures in parameter_re.captures_iter(text) {
+        let Some(raw_type) = captures.get(1) else {
+            continue;
+        };
+        let Some(variable_name) = captures.get(2) else {
+            continue;
+        };
+        let resolved = source_class.resolve_name(raw_type.as_str().trim_start_matches('?'));
+        if model_methods.contains_key(&resolved) {
+            variables.insert(variable_name.as_str().to_string(), resolved);
         }
     }
 
     let new_model_re =
         Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)\s*=\s*new\s+([A-Z][A-Za-z0-9_\\]*)\b"#)
             .expect("new model regex");
-    for captures in new_model_re.captures_iter(&controller.body_text) {
+    for captures in new_model_re.captures_iter(text) {
+        let Some(variable_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(class_name) = captures.get(2) else {
+            continue;
+        };
+        let resolved = source_class.resolve_name(class_name.as_str());
+        if model_methods.contains_key(&resolved) {
+            variables.insert(variable_name.as_str().to_string(), resolved);
+        }
+    }
+
+    let direct_model_loader_re = Regex::new(
+        r#"\$([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Z][A-Za-z0-9_\\]*)::(find|findOrFail|first|firstOrFail|firstOrNew|firstOrCreate|forceCreate|make|sole|updateOrCreate|create)\s*\("#,
+    )
+    .expect("direct model loader regex");
+    for captures in direct_model_loader_re.captures_iter(text) {
+        let Some(variable_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(class_name) = captures.get(2) else {
+            continue;
+        };
+        let resolved = source_class.resolve_name(class_name.as_str());
+        if model_methods.contains_key(&resolved) {
+            variables.insert(variable_name.as_str().to_string(), resolved);
+        }
+    }
+
+    let query_model_loader_re = Regex::new(
+        r#"\$([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Z][A-Za-z0-9_\\]*)::[A-Za-z_][A-Za-z0-9_]*\([^;]*?->(find|findOrFail|first|firstOrFail|sole)\s*\("#,
+    )
+    .expect("query model loader regex");
+    for captures in query_model_loader_re.captures_iter(text) {
         let Some(variable_name) = captures.get(1) else {
             continue;
         };
@@ -1314,4 +1373,155 @@ fn extract_dispatched_jobs(method_body: &str, source_class: &SourceClass) -> BTr
     }
 
     jobs
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use serde_json::json;
+
+    use super::analyze_controller_reachability;
+    use crate::contracts::AnalysisRequest;
+    use crate::model::{AnalyzedFile, FileFacts, ModelFacts, ModelMethodFact};
+    use crate::pipeline::PipelineResult;
+
+    #[test]
+    fn reachable_command_keeps_explicitly_loaded_model_helper_alive() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let request: AnalysisRequest = serde_json::from_value(json!({
+            "contractVersion": "deadcode.analysis.v1",
+            "requestId": "req-model-method-command",
+            "runtimeFingerprint": "fp-model-method-command",
+            "manifest": {
+                "project": {
+                    "root": root,
+                    "composer": "composer.json"
+                },
+                "scan": {
+                    "targets": ["app"],
+                    "globs": ["**/*.php"]
+                },
+                "features": {
+                    "http_status": true,
+                    "request_usage": true,
+                    "resource_usage": true,
+                    "with_pivot": true,
+                    "attribute_make": true,
+                    "scopes_used": true,
+                    "polymorphic": true,
+                    "broadcast_channels": true
+                }
+            },
+            "runtime": {
+                "app": {
+                    "basePath": env!("CARGO_MANIFEST_DIR"),
+                    "laravelVersion": "12.0.0",
+                    "phpVersion": "8.3.0",
+                    "appEnv": "testing"
+                },
+                "commands": [
+                    {
+                        "signature": "invoices:report",
+                        "fqcn": "App\\Console\\Commands\\ReportInvoicesCommand",
+                        "description": "Report invoices"
+                    }
+                ]
+            }
+        }))
+        .expect("request should deserialize");
+        let command_source = r#"<?php
+
+namespace App\Console\Commands;
+
+use App\Models\Invoice;
+use Illuminate\Console\Command;
+
+class ReportInvoicesCommand extends Command
+{
+    public function handle(): void
+    {
+        $invoice = Invoice::findOrFail($id);
+        $invoice->summary();
+    }
+}
+"#;
+        let model_source = r#"<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Invoice extends Model
+{
+    public function summary(): string
+    {
+        return 'summary';
+    }
+
+    public function debugLabel(): string
+    {
+        return 'debug';
+    }
+}
+"#;
+        let result = PipelineResult {
+            files: vec![
+                AnalyzedFile {
+                    path: root.join("app/Console/Commands/ReportInvoicesCommand.php"),
+                    relative_path: "app/Console/Commands/ReportInvoicesCommand.php".to_string(),
+                    source_text: command_source.to_string(),
+                    facts: FileFacts::default(),
+                },
+                AnalyzedFile {
+                    path: root.join("app/Models/Invoice.php"),
+                    relative_path: "app/Models/Invoice.php".to_string(),
+                    source_text: model_source.to_string(),
+                    facts: FileFacts {
+                        models: vec![ModelFacts {
+                            class_name: "Invoice".to_string(),
+                            fqcn: "App\\Models\\Invoice".to_string(),
+                            relationships: Vec::new(),
+                            scopes: Vec::new(),
+                            attributes: Vec::new(),
+                            methods: vec![
+                                ModelMethodFact {
+                                    name: "summary".to_string(),
+                                    body_text: "public function summary(): string\n    {\n        return 'summary';\n    }"
+                                        .to_string(),
+                                },
+                                ModelMethodFact {
+                                    name: "debugLabel".to_string(),
+                                    body_text: "public function debugLabel(): string\n    {\n        return 'debug';\n    }"
+                                        .to_string(),
+                                },
+                            ],
+                        }],
+                        ..FileFacts::default()
+                    },
+                },
+            ],
+            route_bindings: Vec::new(),
+            partial: false,
+            duration_ms: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+        };
+
+        let report = analyze_controller_reachability(&request, &result);
+
+        assert!(report.symbols.iter().any(|symbol| {
+            symbol.kind == "model_method"
+                && symbol.symbol == "App\\Models\\Invoice::summary"
+                && symbol.reachable_from_runtime
+        }));
+        assert!(!report.findings.iter().any(|finding| {
+            finding.category == "unused_model_method"
+                && finding.symbol == "App\\Models\\Invoice::summary"
+        }));
+        assert!(report.findings.iter().any(|finding| {
+            finding.category == "unused_model_method"
+                && finding.symbol == "App\\Models\\Invoice::debugLabel"
+        }));
+    }
 }

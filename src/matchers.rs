@@ -201,11 +201,14 @@ struct MethodInfo {
     name: String,
     text: String,
     is_public: bool,
+    is_static: bool,
+    parameter_count: usize,
 }
 
 fn extract_class_methods(class_node: Node, source: &[u8]) -> Vec<MethodInfo> {
     let mut methods = Vec::new();
     let mut cursor = class_node.walk();
+    let parameter_re = Regex::new(r#"\$[A-Za-z_][A-Za-z0-9_]*"#).expect("method parameter regex");
 
     for child in class_node.children(&mut cursor) {
         if child.kind() != "declaration_list" {
@@ -221,13 +224,18 @@ fn extract_class_methods(class_node: Node, source: &[u8]) -> Vec<MethodInfo> {
             let name = extract_named_child_text(member, source, "name")
                 .unwrap_or_else(|| "anonymous".to_string());
             let text = node_text(member, source);
-            let is_public =
-                text.contains("public function") || text.contains("public static function");
+            let signature = text.split('{').next().unwrap_or(text.as_str());
+            let is_public = signature.contains("public function")
+                || signature.contains("public static function");
+            let is_static = signature.contains("static function");
+            let parameter_count = parameter_re.find_iter(signature).count();
 
             methods.push(MethodInfo {
                 name,
                 text,
                 is_public,
+                is_static,
+                parameter_count,
             });
         }
     }
@@ -607,11 +615,14 @@ fn extract_model_helper_methods(
     let mut helper_methods = methods
         .iter()
         .filter(|method| method.is_public)
+        .filter(|method| !method.is_static)
+        .filter(|method| method.parameter_count == 0)
         .filter(|method| !method.name.starts_with("__"))
         .filter(|method| !method.name.starts_with("scope"))
         .filter(|method| !relationship_names.contains(method.name.as_str()))
         .filter(|method| !attribute_names.contains(method.name.as_str()))
         .filter(|method| !accessor_mutator_re.is_match(&method.name))
+        .filter(|method| !is_known_framework_model_hook(&method.name))
         .map(|method| ModelMethodFact {
             name: method.name.clone(),
             body_text: method.text.clone(),
@@ -620,6 +631,29 @@ fn extract_model_helper_methods(
     helper_methods.sort_by(|a, b| a.name.cmp(&b.name));
     helper_methods.dedup_by(|a, b| a.name == b.name);
     helper_methods
+}
+
+fn is_known_framework_model_hook(name: &str) -> bool {
+    const RESERVED_PREFIXES: [&str; 6] = ["boot", "get", "initialize", "new", "resolve", "set"];
+    const RESERVED_EXACT: [&str; 12] = [
+        "attributesToArray",
+        "delete",
+        "fresh",
+        "jsonSerialize",
+        "load",
+        "loadMissing",
+        "refresh",
+        "relationsToArray",
+        "replicate",
+        "restore",
+        "save",
+        "toArray",
+    ];
+
+    RESERVED_PREFIXES
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+        || RESERVED_EXACT.contains(&name)
 }
 
 fn extract_model_relationships(
@@ -944,4 +978,100 @@ fn resolve_class_name(raw: &str, namespace: &str, imports: &BTreeMap<String, Str
         .get(trimmed)
         .cloned()
         .unwrap_or_else(|| qualify_name(namespace, trimmed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MethodInfo, ModelRelationshipFact, extract_model_helper_methods};
+
+    #[test]
+    fn model_helper_candidates_skip_known_framework_hooks() {
+        let methods = vec![
+            MethodInfo {
+                name: "summary".to_string(),
+                text: "public function summary(): string { return 'summary'; }".to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 0,
+            },
+            MethodInfo {
+                name: "debugLabel".to_string(),
+                text: "public function debugLabel(): string { return 'debug'; }".to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 0,
+            },
+            MethodInfo {
+                name: "getRouteKeyName".to_string(),
+                text: "public function getRouteKeyName(): string { return 'uuid'; }".to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 0,
+            },
+            MethodInfo {
+                name: "resolveRouteBinding".to_string(),
+                text: "public function resolveRouteBinding($value, $field = null) { return null; }"
+                    .to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 2,
+            },
+            MethodInfo {
+                name: "newCollection".to_string(),
+                text: "public function newCollection(array $models = []) { return $models; }"
+                    .to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 1,
+            },
+            MethodInfo {
+                name: "scopeActive".to_string(),
+                text: "public function scopeActive($query) { return $query; }".to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 1,
+            },
+            MethodInfo {
+                name: "customer".to_string(),
+                text: "public function customer() { return $this->belongsTo(Customer::class); }"
+                    .to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 0,
+            },
+            MethodInfo {
+                name: "fullName".to_string(),
+                text: "public function fullName() { return Attribute::make(); }".to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 0,
+            },
+            MethodInfo {
+                name: "getDisplayNameAttribute".to_string(),
+                text: "public function getDisplayNameAttribute(): string { return 'x'; }"
+                    .to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 0,
+            },
+        ];
+        let relationships = vec![ModelRelationshipFact {
+            name: "customer".to_string(),
+            relation_type: "belongsTo".to_string(),
+            related: Some("App\\Models\\Customer".to_string()),
+            pivot_columns: Vec::new(),
+            pivot_alias: None,
+            pivot_timestamps: false,
+            morph_name: None,
+        }];
+        let attributes = vec!["fullName".to_string()];
+
+        let helper_methods = extract_model_helper_methods(&methods, &relationships, &attributes);
+        let names = helper_methods
+            .into_iter()
+            .map(|method| method.name)
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["debugLabel".to_string(), "summary".to_string()]);
+    }
 }
