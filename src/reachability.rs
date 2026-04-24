@@ -8,17 +8,21 @@ use crate::deadcode_model::{
     FINDING_CATEGORY_UNUSED_CONTROLLER_CLASS, FINDING_CATEGORY_UNUSED_CONTROLLER_METHOD,
     FINDING_CATEGORY_UNUSED_FORM_REQUEST, FINDING_CATEGORY_UNUSED_JOB_CLASS,
     FINDING_CATEGORY_UNUSED_LISTENER_CLASS, FINDING_CATEGORY_UNUSED_MODEL_METHOD,
-    FINDING_CATEGORY_UNUSED_MODEL_SCOPE, FINDING_CATEGORY_UNUSED_POLICY_CLASS,
-    FINDING_CATEGORY_UNUSED_RESOURCE_CLASS, FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding,
-    SYMBOL_KIND_COMMAND_CLASS, SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD,
-    SYMBOL_KIND_FORM_REQUEST_CLASS, SYMBOL_KIND_JOB_CLASS, SYMBOL_KIND_LISTENER_CLASS,
-    SYMBOL_KIND_MODEL_METHOD, SYMBOL_KIND_MODEL_SCOPE, SYMBOL_KIND_POLICY_CLASS,
+    FINDING_CATEGORY_UNUSED_MODEL_RELATIONSHIP, FINDING_CATEGORY_UNUSED_MODEL_SCOPE,
+    FINDING_CATEGORY_UNUSED_POLICY_CLASS, FINDING_CATEGORY_UNUSED_RESOURCE_CLASS,
+    FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding, SYMBOL_KIND_COMMAND_CLASS,
+    SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD, SYMBOL_KIND_FORM_REQUEST_CLASS,
+    SYMBOL_KIND_JOB_CLASS, SYMBOL_KIND_LISTENER_CLASS, SYMBOL_KIND_MODEL_METHOD,
+    SYMBOL_KIND_MODEL_RELATIONSHIP, SYMBOL_KIND_MODEL_SCOPE, SYMBOL_KIND_POLICY_CLASS,
     SYMBOL_KIND_RESOURCE_CLASS, SYMBOL_KIND_SUBSCRIBER_CLASS, SymbolRecord,
 };
-use crate::model::{AnalyzedFile, ControllerMethod, ModelMethodFact};
+use crate::model::{AnalyzedFile, ControllerMethod, ModelMethodFact, ModelRelationshipFact};
 use crate::parser::line_range_for_span;
 use crate::pipeline::PipelineResult;
-use crate::source_index::{SourceClass, SourceIndex, extract_balanced_region};
+use crate::source_index::{
+    SourceClass, SourceIndex, extract_balanced_region, split_top_level, split_top_level_key_value,
+    strip_php_string,
+};
 
 pub struct ControllerReachabilityReport {
     pub entrypoints: Vec<Entrypoint>,
@@ -144,6 +148,16 @@ pub fn analyze_controller_reachability(
         collect_reachable_form_requests(result, &source_index, &reachable_actions);
     let reachable_resources = collect_reachable_resources(result, &reachable_actions);
     let reachable_model_methods = collect_reachable_model_methods(
+        result,
+        &source_index,
+        &reachable_actions,
+        &reachable_commands,
+        &reachable_listeners,
+        &reachable_subscribers,
+        &reachable_jobs,
+        &reachable_policies,
+    );
+    let reachable_model_relationships = collect_reachable_model_relationships(
         result,
         &source_index,
         &reachable_actions,
@@ -318,6 +332,46 @@ pub fn analyze_controller_reachability(
                 findings.push(Finding {
                     symbol: symbol.clone(),
                     category: FINDING_CATEGORY_UNUSED_MODEL_SCOPE.to_string(),
+                    confidence: CONFIDENCE_HIGH.to_string(),
+                    file: file.relative_path.clone(),
+                    start_line,
+                    end_line,
+                });
+
+                if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
+                    change_sets.push(RemovalChangeSet {
+                        file: file.relative_path.clone(),
+                        symbol,
+                        start_line,
+                        end_line,
+                    });
+                }
+            }
+
+            for relationship in &model.relationships {
+                let symbol = format!("{}::{}", model.fqcn, relationship.name);
+                let reachable_from_runtime = reachable_model_relationships.contains(&symbol);
+                let line_range = find_model_relationship_line_range(file, relationship);
+                let (start_line, end_line) = line_range
+                    .map(|(start, end)| (Some(start), Some(end)))
+                    .unwrap_or((None, None));
+
+                symbols.push(SymbolRecord {
+                    kind: SYMBOL_KIND_MODEL_RELATIONSHIP.to_string(),
+                    symbol: symbol.clone(),
+                    file: file.relative_path.clone(),
+                    reachable_from_runtime,
+                    start_line,
+                    end_line,
+                });
+
+                if reachable_from_runtime {
+                    continue;
+                }
+
+                findings.push(Finding {
+                    symbol: symbol.clone(),
+                    category: FINDING_CATEGORY_UNUSED_MODEL_RELATIONSHIP.to_string(),
                     confidence: CONFIDENCE_HIGH.to_string(),
                     file: file.relative_path.clone(),
                     start_line,
@@ -816,6 +870,90 @@ fn collect_reachable_model_scopes(
     reachable_model_scopes
 }
 
+fn collect_reachable_model_relationships(
+    result: &PipelineResult,
+    source_index: &SourceIndex,
+    reachable_actions: &BTreeSet<String>,
+    reachable_commands: &BTreeSet<String>,
+    reachable_listeners: &BTreeSet<String>,
+    reachable_subscribers: &BTreeSet<String>,
+    reachable_jobs: &BTreeSet<String>,
+    reachable_policies: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let model_relationships = result
+        .files
+        .iter()
+        .flat_map(|file| file.facts.models.iter())
+        .map(|model| {
+            (
+                model.fqcn.clone(),
+                model
+                    .relationships
+                    .iter()
+                    .map(|relationship| relationship.name.clone())
+                    .collect::<BTreeSet<_>>(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut reachable_model_relationships = BTreeSet::new();
+
+    for (_, controller) in result.controller_methods() {
+        let symbol = format!("{}::{}", controller.fqcn, controller.method_name);
+        if !reachable_actions.contains(&symbol) {
+            continue;
+        }
+
+        let Some(source_class) = source_index.get(&controller.fqcn) else {
+            continue;
+        };
+
+        for (model_fqcn, relationship_name) in extract_called_model_relationships_from_text(
+            &controller.body_text,
+            source_class,
+            &model_relationships,
+        ) {
+            reachable_model_relationships.insert(format!("{model_fqcn}::{relationship_name}"));
+        }
+    }
+
+    collect_reachable_model_relationships_from_runtime_roots(
+        &mut reachable_model_relationships,
+        source_index,
+        reachable_commands,
+        &["handle"],
+        &model_relationships,
+    );
+    collect_reachable_model_relationships_from_runtime_roots(
+        &mut reachable_model_relationships,
+        source_index,
+        reachable_listeners,
+        &["handle"],
+        &model_relationships,
+    );
+    collect_reachable_model_relationships_from_runtime_roots(
+        &mut reachable_model_relationships,
+        source_index,
+        reachable_subscribers,
+        &["subscribe"],
+        &model_relationships,
+    );
+    collect_reachable_model_relationships_from_runtime_roots(
+        &mut reachable_model_relationships,
+        source_index,
+        reachable_jobs,
+        &["handle"],
+        &model_relationships,
+    );
+    collect_reachable_model_relationships_from_policies(
+        &mut reachable_model_relationships,
+        source_index,
+        reachable_policies,
+        &model_relationships,
+    );
+
+    reachable_model_relationships
+}
+
 fn collect_reachable_model_methods_from_runtime_roots(
     reachable_model_methods: &mut BTreeSet<String>,
     source_index: &SourceIndex,
@@ -859,6 +997,58 @@ fn collect_reachable_model_methods_from_policies(
                 extract_called_model_methods_from_text(&method_text, source_class, model_methods)
             {
                 reachable_model_methods.insert(format!("{model_fqcn}::{method_name}"));
+            }
+        }
+    }
+}
+
+fn collect_reachable_model_relationships_from_runtime_roots(
+    reachable_model_relationships: &mut BTreeSet<String>,
+    source_index: &SourceIndex,
+    runtime_roots: &BTreeSet<String>,
+    entrypoint_methods: &[&str],
+    model_relationships: &BTreeMap<String, BTreeSet<String>>,
+) {
+    for fqcn in runtime_roots {
+        let Some(source_class) = source_index.get(fqcn) else {
+            continue;
+        };
+
+        for method_name in entrypoint_methods {
+            let Some(method_text) = extract_method_text(&source_class.source_text, method_name)
+            else {
+                continue;
+            };
+
+            for (model_fqcn, relationship_name) in extract_called_model_relationships_from_text(
+                &method_text,
+                source_class,
+                model_relationships,
+            ) {
+                reachable_model_relationships.insert(format!("{model_fqcn}::{relationship_name}"));
+            }
+        }
+    }
+}
+
+fn collect_reachable_model_relationships_from_policies(
+    reachable_model_relationships: &mut BTreeSet<String>,
+    source_index: &SourceIndex,
+    reachable_policies: &BTreeSet<String>,
+    model_relationships: &BTreeMap<String, BTreeSet<String>>,
+) {
+    for fqcn in reachable_policies {
+        let Some(source_class) = source_index.get(fqcn) else {
+            continue;
+        };
+
+        for method_text in extract_policy_entrypoint_texts(source_class) {
+            for (model_fqcn, relationship_name) in extract_called_model_relationships_from_text(
+                &method_text,
+                source_class,
+                model_relationships,
+            ) {
+                reachable_model_relationships.insert(format!("{model_fqcn}::{relationship_name}"));
             }
         }
     }
@@ -959,6 +1149,28 @@ fn find_model_scope_line_range(file: &AnalyzedFile, scope_name: &str) -> Option<
         file.source_text.as_bytes(),
         scope_match.start(),
         brace_start + scope_end_relative + 1,
+    ))
+}
+
+fn find_model_relationship_line_range(
+    file: &AnalyzedFile,
+    relationship: &ModelRelationshipFact,
+) -> Option<(usize, usize)> {
+    let relationship_re = Regex::new(&format!(
+        r#"(?m)\bfunction\s+{}\s*\("#,
+        regex::escape(&relationship.name)
+    ))
+    .expect("model relationship line range regex");
+    let relationship_match = relationship_re.find(&file.source_text)?;
+    let brace_offset = file.source_text[relationship_match.end()..].find('{')?;
+    let brace_start = relationship_match.end() + brace_offset;
+    let (_, _, relationship_end_relative) =
+        extract_balanced_region(&file.source_text[brace_start..], '{', '}')?;
+
+    Some(line_range_for_span(
+        file.source_text.as_bytes(),
+        relationship_match.start(),
+        brace_start + relationship_end_relative + 1,
     ))
 }
 
@@ -1416,7 +1628,8 @@ fn extract_called_model_methods_from_text(
     model_methods: &BTreeMap<String, BTreeSet<String>>,
 ) -> BTreeSet<(String, String)> {
     let mut called = BTreeSet::new();
-    let model_variables = collect_model_variables_from_text(text, source_class, model_methods);
+    let known_models = model_methods.keys().cloned().collect::<BTreeSet<_>>();
+    let model_variables = collect_model_variables_from_text(text, source_class, &known_models);
 
     let instance_call_re =
         Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
@@ -1460,10 +1673,115 @@ fn extract_called_model_methods_from_text(
     called
 }
 
+fn extract_called_model_relationships_from_text(
+    text: &str,
+    source_class: &SourceClass,
+    model_relationships: &BTreeMap<String, BTreeSet<String>>,
+) -> BTreeSet<(String, String)> {
+    let mut called = BTreeSet::new();
+    let known_models = model_relationships.keys().cloned().collect::<BTreeSet<_>>();
+    let model_variables = collect_model_variables_from_text(text, source_class, &known_models);
+
+    let instance_call_re =
+        Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
+            .expect("relationship instance call regex");
+    for captures in instance_call_re.captures_iter(text) {
+        let Some(variable_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(relationship_name) = captures.get(2) else {
+            continue;
+        };
+        let Some(model_fqcn) = model_variables.get(variable_name.as_str()) else {
+            continue;
+        };
+        register_model_relationship_reference(
+            &mut called,
+            model_relationships,
+            model_fqcn,
+            relationship_name.as_str(),
+        );
+    }
+
+    let instance_access_re =
+        Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)\b"#)
+            .expect("relationship instance access regex");
+    for captures in instance_access_re.captures_iter(text) {
+        let Some(variable_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(relationship_name) = captures.get(2) else {
+            continue;
+        };
+        let Some(full_match) = captures.get(0) else {
+            continue;
+        };
+        let suffix = &text[full_match.end()..];
+        if suffix.trim_start().starts_with('(') {
+            continue;
+        }
+        let Some(model_fqcn) = model_variables.get(variable_name.as_str()) else {
+            continue;
+        };
+        register_model_relationship_reference(
+            &mut called,
+            model_relationships,
+            model_fqcn,
+            relationship_name.as_str(),
+        );
+    }
+
+    let static_chain_re =
+        Regex::new(r#"(?s)(\\?[A-Z][A-Za-z0-9_\\]*)::[A-Za-z_][A-Za-z0-9_]*\([^;]*"#)
+            .expect("relationship static chain regex");
+    for captures in static_chain_re.captures_iter(text) {
+        let Some(class_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(chain_text) = captures.get(0) else {
+            continue;
+        };
+        let model_fqcn = source_class.resolve_name(class_name.as_str());
+        register_eager_loaded_model_relationships(
+            &mut called,
+            model_relationships,
+            &model_fqcn,
+            chain_text.as_str(),
+        );
+    }
+
+    let eager_load_re = Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)->(load|loadMissing)\s*\("#)
+        .expect("relationship instance eager load regex");
+    for captures in eager_load_re.captures_iter(text) {
+        let Some(variable_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(method_match) = captures.get(0) else {
+            continue;
+        };
+        let Some(model_fqcn) = model_variables.get(variable_name.as_str()) else {
+            continue;
+        };
+        let args_start = method_match.end() - 1;
+        let Some((argument_text, _, _)) = extract_balanced_region(&text[args_start..], '(', ')')
+        else {
+            continue;
+        };
+        register_eager_loaded_model_relationships(
+            &mut called,
+            model_relationships,
+            model_fqcn,
+            &format!("->{}({argument_text})", &captures[2]),
+        );
+    }
+
+    called
+}
+
 fn collect_model_variables_from_text(
     text: &str,
     source_class: &SourceClass,
-    model_methods: &BTreeMap<String, BTreeSet<String>>,
+    known_models: &BTreeSet<String>,
 ) -> BTreeMap<String, String> {
     let mut variables = BTreeMap::new();
     let parameter_re = Regex::new(r#"(?:(\??[A-Z][A-Za-z0-9_\\]*)\s+)\$([A-Za-z_][A-Za-z0-9_]*)"#)
@@ -1476,7 +1794,7 @@ fn collect_model_variables_from_text(
             continue;
         };
         let resolved = source_class.resolve_name(raw_type.as_str().trim_start_matches('?'));
-        if model_methods.contains_key(&resolved) {
+        if known_models.contains(&resolved) {
             variables.insert(variable_name.as_str().to_string(), resolved);
         }
     }
@@ -1492,7 +1810,7 @@ fn collect_model_variables_from_text(
             continue;
         };
         let resolved = source_class.resolve_name(class_name.as_str());
-        if model_methods.contains_key(&resolved) {
+        if known_models.contains(&resolved) {
             variables.insert(variable_name.as_str().to_string(), resolved);
         }
     }
@@ -1509,7 +1827,7 @@ fn collect_model_variables_from_text(
             continue;
         };
         let resolved = source_class.resolve_name(class_name.as_str());
-        if model_methods.contains_key(&resolved) {
+        if known_models.contains(&resolved) {
             variables.insert(variable_name.as_str().to_string(), resolved);
         }
     }
@@ -1526,12 +1844,104 @@ fn collect_model_variables_from_text(
             continue;
         };
         let resolved = source_class.resolve_name(class_name.as_str());
-        if model_methods.contains_key(&resolved) {
+        if known_models.contains(&resolved) {
             variables.insert(variable_name.as_str().to_string(), resolved);
         }
     }
 
     variables
+}
+
+fn register_model_relationship_reference(
+    called: &mut BTreeSet<(String, String)>,
+    model_relationships: &BTreeMap<String, BTreeSet<String>>,
+    model_fqcn: &str,
+    relationship_name: &str,
+) {
+    if model_relationships
+        .get(model_fqcn)
+        .is_some_and(|relationships| relationships.contains(relationship_name))
+    {
+        called.insert((model_fqcn.to_string(), relationship_name.to_string()));
+    }
+}
+
+fn register_eager_loaded_model_relationships(
+    called: &mut BTreeSet<(String, String)>,
+    model_relationships: &BTreeMap<String, BTreeSet<String>>,
+    model_fqcn: &str,
+    text: &str,
+) {
+    let eager_load_re =
+        Regex::new(r#"->(with|load|loadMissing)\s*\("#).expect("relationship eager load regex");
+    let Some(known_relationships) = model_relationships.get(model_fqcn) else {
+        return;
+    };
+
+    for method_match in eager_load_re.find_iter(text) {
+        let args_start = method_match.end() - 1;
+        let Some((argument_text, _, _)) = extract_balanced_region(&text[args_start..], '(', ')')
+        else {
+            continue;
+        };
+
+        for relationship_name in extract_eager_loaded_relationship_names(&argument_text) {
+            if known_relationships.contains(&relationship_name) {
+                called.insert((model_fqcn.to_string(), relationship_name));
+            }
+        }
+    }
+}
+
+fn extract_eager_loaded_relationship_names(argument_text: &str) -> BTreeSet<String> {
+    let mut relationships = BTreeSet::new();
+
+    for argument in split_top_level(argument_text, ',') {
+        collect_eager_loaded_relationship_names_from_value(&mut relationships, &argument);
+    }
+
+    relationships
+}
+
+fn collect_eager_loaded_relationship_names_from_value(
+    relationships: &mut BTreeSet<String>,
+    value: &str,
+) {
+    let trimmed = value.trim();
+
+    if let Some(name) = strip_php_string(trimmed) {
+        if let Some(normalized) = normalize_loaded_relationship_name(&name) {
+            relationships.insert(normalized);
+        }
+        return;
+    }
+
+    if let Some((inner, _, _)) = extract_balanced_region(trimmed, '[', ']') {
+        for entry in split_top_level(&inner, ',') {
+            if let Some((key, raw_value)) = split_top_level_key_value(&entry) {
+                if let Some(key_name) = strip_php_string(&key)
+                    .and_then(|name| normalize_loaded_relationship_name(&name))
+                {
+                    relationships.insert(key_name);
+                }
+                collect_eager_loaded_relationship_names_from_value(relationships, &raw_value);
+                continue;
+            }
+
+            collect_eager_loaded_relationship_names_from_value(relationships, &entry);
+        }
+    }
+}
+
+fn normalize_loaded_relationship_name(name: &str) -> Option<String> {
+    let candidate = name
+        .trim()
+        .split(['.', ':'])
+        .next()
+        .unwrap_or_default()
+        .trim();
+
+    (!candidate.is_empty()).then(|| candidate.to_string())
 }
 
 fn resolve_called_controller(
