@@ -1,0 +1,47 @@
+{
+  "contractVersion": "deadcode.analysis.v1",
+  "requestId": "req-deadcode-http-adjacent",
+  "runtimeFingerprint": "fp-deadcode-http-adjacent",
+  "manifest": {
+    "project": {
+      "root": "C:\\Users\\garae\\.config\\superpowers\\worktrees\\laravel-dead-code-detector\\execute-phase1\\repos\\deadcore\\test\\fixtures\\integration\\deadcode-http-adjacent",
+      "composer": "composer.json"
+    },
+    "scan": {
+      "targets": ["app", "routes"],
+      "globs": ["**/*.php"]
+    },
+    "features": {
+      "http_status": true,
+      "request_usage": true,
+      "resource_usage": true
+    }
+  },
+  "runtime": {
+    "app": {
+      "basePath": "C:\\Users\\garae\\.config\\superpowers\\worktrees\\laravel-dead-code-detector\\execute-phase1\\repos\\deadcore\\test\\fixtures\\integration\\deadcode-http-adjacent",
+      "laravelVersion": "12.0.0",
+      "phpVersion": "8.3.0",
+      "appEnv": "testing"
+    },
+    "routes": [
+      {
+        "routeId": "orders.store",
+        "methods": ["POST"],
+        "uri": "api/orders",
+        "domain": null,
+        "name": "orders.store",
+        "prefix": "api",
+        "middleware": ["api"],
+        "where": {},
+        "defaults": {},
+        "bindings": [],
+        "action": {
+          "kind": "controller_method",
+          "fqcn": "App\\Http\\Controllers\\ReachableOrderController",
+          "method": "store"
+        }
+      }
+    ]
+  }
+}
