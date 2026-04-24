@@ -1,12 +1,12 @@
 # deadcore
 
-Local incubation fork of `oxinfer` for Laravel dead code analysis.
+Rust analysis core for Laravel dead code pruning.
 
-This repo is a local-only fork used to build the Rust analysis core for Laravel dead code reachability, findings, and removal plans.
+`deadcore` reads Laravel runtime facts plus project source, builds a static reachability view, and emits a deterministic `deadcode.analysis.v1` JSON report. It is designed to be called by a Laravel package or automation wrapper, not to be the whole user product by itself.
 
-## Phase 5 Request Mode
+## What It Does
 
-The current verified slice now covers HTTP-adjacent reachability, the first execution surfaces beyond HTTP, the first model-heavy Laravel inference, and additive explainability for why supported symbols stay alive or are reported dead:
+The current engine can classify:
 
 - controller methods reached from Laravel runtime route entrypoints plus supported direct call expansion
 - dead controller classes when all extracted controller methods are unreachable
@@ -22,49 +22,90 @@ The current verified slice now covers HTTP-adjacent reachability, the first exec
 - relationship methods reached from supported explicit access and eager-loading patterns
 - legacy and modern accessors/mutators reached from supported explicit reads, writes, and append-style metadata
 
+The output includes evidence-oriented fields so consumers can explain why a symbol was kept alive or reported dead.
+
+## Quickstart
+
+Run the test suite:
+
+```bash
+cargo test --locked
+```
+
+Run a request-mode fixture:
+
+```bash
+cargo run -- --request test/fixtures/contracts/deadcode/controller-basic.json
+```
+
+Run representative coverage fixtures:
+
 ```bash
 cargo run -- --request test/fixtures/contracts/deadcode/http-adjacent.json
 cargo run -- --request test/fixtures/contracts/deadcode/job-reachability.json
 cargo run -- --request test/fixtures/contracts/deadcode/policy-reachability.json
-cargo run -- --request test/fixtures/contracts/deadcode/model-method-reachability.json
-cargo run -- --request test/fixtures/contracts/deadcode/model-scope-reachability.json
-cargo run -- --request test/fixtures/contracts/deadcode/model-relationship-reachability.json
-cargo run -- --request test/fixtures/contracts/deadcode/model-attribute-reachability.json
+cargo run -- --request test/fixtures/contracts/deadcode/model-methods.json
+cargo run -- --request test/fixtures/contracts/deadcode/model-scopes.json
+cargo run -- --request test/fixtures/contracts/deadcode/model-relationships.json
+cargo run -- --request test/fixtures/contracts/deadcode/model-attributes.json
 ```
 
-The emitted `deadcode.analysis.v1` payload currently includes:
+Build a release binary:
 
+```bash
+cargo build --locked --release
+```
+
+## Contract
+
+`deadcore` emits `deadcode.analysis.v1`.
+
+Top-level payload fields:
+
+- `contractVersion`
+- `status`
 - `meta`
 - `entrypoints`
 - `symbols`
 - `findings`
 - `removalPlan`
 
-Reachable symbols can now carry:
+Reachable symbols may include:
 
 - `reasonSummary`
 - `reachabilityReasons`
 
-Dead findings can now carry:
+Dead findings may include:
 
 - `reasonSummary`
 - `evidence`
 
-Current limits:
+Removal plans are emitted only when the engine has a concrete source range for a supported finding. The Laravel package decides which findings are stageable.
 
-- `FormRequest` reachability is limited to explicit typed controller parameters
-- resource reachability is limited to direct supported controller usage
-- controller-class deadness is still defined in terms of extracted controller methods
-- subscriber reachability is limited to explicit runtime subscriber registration
-- job reachability is limited to:
-  - `SomeJob::dispatch(...)`
-  - `dispatch(new SomeJob(...))`
-  - `Bus::dispatch(new SomeJob(...))`
-- policy support is class-level only; policy methods are intentionally out of scope
-- model-method reachability is limited to supported explicit calls from already-reachable controllers, commands, listeners, subscribers, jobs, policies, and other already-reachable model methods
-- scope reachability is limited to explicit conventional patterns such as `Model::published()` and supported owner-resolved query-builder calls
-- relationship reachability is limited to explicit access plus supported eager-loading patterns such as `with()`, `load()`, and `loadMissing()`
-- accessor reachability is limited to explicit attribute reads plus append-driven serialization support
-- mutator reachability is limited to explicit attribute writes, `setAttribute(...)`, and supported bulk write paths such as `fill`, `update`, `create`, `firstOrCreate`, `updateOrCreate`, and constructor hydration
-- reason summaries and evidence are intentionally compact and category-level; this repo does not yet expose full internal call chains
-- model-heavy findings are additive under `deadcode.analysis.v1`, but this repo alone does not claim they are stage-safe in the Laravel package
+## Current Limits
+
+- `FormRequest` reachability is limited to explicit typed controller parameters.
+- Resource reachability is limited to direct supported controller usage.
+- Controller-class deadness is defined by extracted controller methods.
+- Subscriber reachability is limited to explicit runtime subscriber registration.
+- Job reachability is limited to `SomeJob::dispatch(...)`, `dispatch(new SomeJob(...))`, and `Bus::dispatch(new SomeJob(...))`.
+- Policy support is class-level only; policy methods are out of scope.
+- Model-method reachability is limited to supported explicit calls from already-reachable controllers, commands, listeners, subscribers, jobs, policies, and model methods.
+- Scope reachability is limited to explicit conventional patterns such as `Model::published()` and supported owner-resolved query-builder calls.
+- Relationship reachability is limited to explicit access plus supported eager-loading patterns such as `with()`, `load()`, and `loadMissing()`.
+- Accessor reachability is limited to explicit attribute reads plus append-driven serialization support.
+- Mutator reachability is limited to explicit attribute writes, `setAttribute(...)`, and supported bulk write paths such as `fill`, `update`, `create`, `firstOrCreate`, `updateOrCreate`, and constructor hydration.
+- Reason summaries and evidence are compact, category-level explanations. The engine does not yet expose full internal call chains.
+
+## Relationship To `deadcode-laravel`
+
+Use `deadcode-laravel` for the full local workflow:
+
+- boot Laravel
+- capture runtime truth
+- invoke `deadcore`
+- render reports
+- stage conservative removals
+- roll back the latest staged change set
+
+`deadcore` owns analysis. `deadcode-laravel` owns Laravel runtime integration and remediation UX.

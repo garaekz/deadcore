@@ -144,13 +144,27 @@ fn manifest_mode_emits_deadcode_report_and_hash() {
 
     let payload: Value =
         serde_json::from_slice(&output.stdout).expect("manifest output should be JSON");
-    let meta = payload["meta"].as_object().expect("deadcode report should have meta");
+    let meta = payload["meta"]
+        .as_object()
+        .expect("deadcode report should have meta");
     assert!(meta["duration_ms"].is_number());
     assert!(meta["cache_hits"].is_number());
     assert!(meta["cache_misses"].is_number());
-    assert!(payload["entrypoints"].as_array().is_some_and(|items| items.is_empty()));
-    assert!(payload["symbols"].as_array().is_some_and(|items| items.is_empty()));
-    assert!(payload["findings"].as_array().is_some_and(|items| items.is_empty()));
+    assert!(
+        payload["entrypoints"]
+            .as_array()
+            .is_some_and(|items| items.is_empty())
+    );
+    assert!(
+        payload["symbols"]
+            .as_array()
+            .is_some_and(|items| items.is_empty())
+    );
+    assert!(
+        payload["findings"]
+            .as_array()
+            .is_some_and(|items| items.is_empty())
+    );
     assert_eq!(payload["removalPlan"]["changeSets"], json!([]));
 
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -192,13 +206,29 @@ fn cache_dir_override_writes_pipeline_cache() {
     );
     let mut first_json: Value =
         serde_json::from_slice(&first.stdout).expect("first output should be valid JSON");
-    assert!(first_json["entrypoints"].as_array().is_some_and(|items| items.is_empty()));
-    assert!(first_json["symbols"].as_array().is_some_and(|items| items.is_empty()));
-    assert!(first_json["findings"].as_array().is_some_and(|items| items.is_empty()));
+    assert!(
+        first_json["entrypoints"]
+            .as_array()
+            .is_some_and(|items| items.is_empty())
+    );
+    assert!(
+        first_json["symbols"]
+            .as_array()
+            .is_some_and(|items| items.is_empty())
+    );
+    assert!(
+        first_json["findings"]
+            .as_array()
+            .is_some_and(|items| items.is_empty())
+    );
     assert_eq!(first_json["removalPlan"]["changeSets"], json!([]));
 
     let cache_files = collect_files(&cache_dir);
-    assert_eq!(cache_files.len(), 5, "expected one cache entry per scanned file");
+    assert_eq!(
+        cache_files.len(),
+        5,
+        "expected one cache entry per scanned file"
+    );
 
     let first_stderr = String::from_utf8_lossy(&first.stderr);
     assert_eq!(parse_cache_counts(&first_stderr), (0, 5), "{first_stderr}");
@@ -226,7 +256,11 @@ fn cache_dir_override_writes_pipeline_cache() {
     let mut second_json: Value =
         serde_json::from_slice(&second.stdout).expect("second output should be valid JSON");
     let second_stderr = String::from_utf8_lossy(&second.stderr);
-    assert_eq!(parse_cache_counts(&second_stderr), (5, 0), "{second_stderr}");
+    assert_eq!(
+        parse_cache_counts(&second_stderr),
+        (5, 0),
+        "{second_stderr}"
+    );
     assert_eq!(second_json["meta"]["cache_hits"], 5);
     assert_eq!(second_json["meta"]["cache_misses"], 0);
 

@@ -73,17 +73,17 @@ fn reports_unused_form_request_resource_and_controller_class() {
     );
 
     assert!(
-        !findings.iter().any(|finding| {
-            finding["symbol"] == "App\\Http\\Requests\\StoreOrderRequest"
-        }),
+        !findings
+            .iter()
+            .any(|finding| { finding["symbol"] == "App\\Http\\Requests\\StoreOrderRequest" }),
         "reachable form request should not be flagged, payload: {}",
         payload
     );
 
     assert!(
-        !findings.iter().any(|finding| {
-            finding["symbol"] == "App\\Http\\Resources\\OrderResource"
-        }),
+        !findings
+            .iter()
+            .any(|finding| { finding["symbol"] == "App\\Http\\Resources\\OrderResource" }),
         "reachable resource should not be flagged, payload: {}",
         payload
     );

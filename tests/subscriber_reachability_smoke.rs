@@ -85,9 +85,9 @@ fn reports_unused_subscriber_class() {
     );
 
     assert!(
-        !findings.iter().any(|finding| {
-            finding["symbol"] == "App\\Listeners\\ReachableOrderSubscriber"
-        }),
+        !findings
+            .iter()
+            .any(|finding| { finding["symbol"] == "App\\Listeners\\ReachableOrderSubscriber" }),
         "reachable subscriber class should not be flagged, payload: {}",
         payload
     );
