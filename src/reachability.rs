@@ -8,12 +8,12 @@ use crate::deadcode_model::{
     FINDING_CATEGORY_UNUSED_CONTROLLER_CLASS, FINDING_CATEGORY_UNUSED_CONTROLLER_METHOD,
     FINDING_CATEGORY_UNUSED_FORM_REQUEST, FINDING_CATEGORY_UNUSED_JOB_CLASS,
     FINDING_CATEGORY_UNUSED_LISTENER_CLASS, FINDING_CATEGORY_UNUSED_MODEL_METHOD,
-    FINDING_CATEGORY_UNUSED_POLICY_CLASS, FINDING_CATEGORY_UNUSED_RESOURCE_CLASS,
-    FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding, SYMBOL_KIND_COMMAND_CLASS,
-    SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD, SYMBOL_KIND_FORM_REQUEST_CLASS,
-    SYMBOL_KIND_JOB_CLASS, SYMBOL_KIND_LISTENER_CLASS, SYMBOL_KIND_MODEL_METHOD,
-    SYMBOL_KIND_POLICY_CLASS, SYMBOL_KIND_RESOURCE_CLASS, SYMBOL_KIND_SUBSCRIBER_CLASS,
-    SymbolRecord,
+    FINDING_CATEGORY_UNUSED_MODEL_SCOPE, FINDING_CATEGORY_UNUSED_POLICY_CLASS,
+    FINDING_CATEGORY_UNUSED_RESOURCE_CLASS, FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding,
+    SYMBOL_KIND_COMMAND_CLASS, SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD,
+    SYMBOL_KIND_FORM_REQUEST_CLASS, SYMBOL_KIND_JOB_CLASS, SYMBOL_KIND_LISTENER_CLASS,
+    SYMBOL_KIND_MODEL_METHOD, SYMBOL_KIND_MODEL_SCOPE, SYMBOL_KIND_POLICY_CLASS,
+    SYMBOL_KIND_RESOURCE_CLASS, SYMBOL_KIND_SUBSCRIBER_CLASS, SymbolRecord,
 };
 use crate::model::{AnalyzedFile, ControllerMethod, ModelMethodFact};
 use crate::parser::line_range_for_span;
@@ -153,6 +153,7 @@ pub fn analyze_controller_reachability(
         &reachable_jobs,
         &reachable_policies,
     );
+    let reachable_model_scopes = collect_reachable_model_scopes(result, &reachable_actions);
     let mut symbols = Vec::new();
     let mut findings = Vec::new();
     let mut change_sets = Vec::new();
@@ -277,6 +278,46 @@ pub fn analyze_controller_reachability(
                 findings.push(Finding {
                     symbol: symbol.clone(),
                     category: FINDING_CATEGORY_UNUSED_MODEL_METHOD.to_string(),
+                    confidence: CONFIDENCE_HIGH.to_string(),
+                    file: file.relative_path.clone(),
+                    start_line,
+                    end_line,
+                });
+
+                if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
+                    change_sets.push(RemovalChangeSet {
+                        file: file.relative_path.clone(),
+                        symbol,
+                        start_line,
+                        end_line,
+                    });
+                }
+            }
+
+            for scope in &model.scopes {
+                let symbol = format!("{}::{scope}", model.fqcn);
+                let reachable_from_runtime = reachable_model_scopes.contains(&symbol);
+                let line_range = find_model_scope_line_range(file, scope);
+                let (start_line, end_line) = line_range
+                    .map(|(start, end)| (Some(start), Some(end)))
+                    .unwrap_or((None, None));
+
+                symbols.push(SymbolRecord {
+                    kind: SYMBOL_KIND_MODEL_SCOPE.to_string(),
+                    symbol: symbol.clone(),
+                    file: file.relative_path.clone(),
+                    reachable_from_runtime,
+                    start_line,
+                    end_line,
+                });
+
+                if reachable_from_runtime {
+                    continue;
+                }
+
+                findings.push(Finding {
+                    symbol: symbol.clone(),
+                    category: FINDING_CATEGORY_UNUSED_MODEL_SCOPE.to_string(),
                     confidence: CONFIDENCE_HIGH.to_string(),
                     file: file.relative_path.clone(),
                     start_line,
@@ -749,6 +790,32 @@ fn collect_reachable_model_methods(
     reachable_model_methods
 }
 
+fn collect_reachable_model_scopes(
+    result: &PipelineResult,
+    reachable_actions: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let scope_owners = collect_model_scope_owners(result);
+    let mut reachable_model_scopes = BTreeSet::new();
+
+    for (_, controller) in result.controller_methods() {
+        let symbol = format!("{}::{}", controller.fqcn, controller.method_name);
+        if !reachable_actions.contains(&symbol) {
+            continue;
+        }
+
+        for scope in &controller.scopes_used {
+            let Some(owner) =
+                resolve_model_scope_owner(&scope_owners, &scope.name, scope.on.as_deref())
+            else {
+                continue;
+            };
+            reachable_model_scopes.insert(format!("{owner}::{}", scope.name));
+        }
+    }
+
+    reachable_model_scopes
+}
+
 fn collect_reachable_model_methods_from_runtime_roots(
     reachable_model_methods: &mut BTreeSet<String>,
     source_index: &SourceIndex,
@@ -876,6 +943,25 @@ fn find_model_method_line_range(
     })
 }
 
+fn find_model_scope_line_range(file: &AnalyzedFile, scope_name: &str) -> Option<(usize, usize)> {
+    let scope_re = Regex::new(&format!(
+        r#"(?m)\bfunction\s+scope{}\s*\("#,
+        regex::escape(&scope_method_suffix(scope_name))
+    ))
+    .expect("model scope line range regex");
+    let scope_match = scope_re.find(&file.source_text)?;
+    let brace_offset = file.source_text[scope_match.end()..].find('{')?;
+    let brace_start = scope_match.end() + brace_offset;
+    let (_, _, scope_end_relative) =
+        extract_balanced_region(&file.source_text[brace_start..], '{', '}')?;
+
+    Some(line_range_for_span(
+        file.source_text.as_bytes(),
+        scope_match.start(),
+        brace_start + scope_end_relative + 1,
+    ))
+}
+
 fn find_class_line_range(class: &SourceClass) -> Option<(usize, usize)> {
     let class_re = Regex::new(&format!(
         r#"(?m)^\s*(?:final\s+|abstract\s+)?class\s+{}\b"#,
@@ -893,6 +979,50 @@ fn find_class_line_range(class: &SourceClass) -> Option<(usize, usize)> {
         class_match.start(),
         brace_start + class_end_relative + 1,
     ))
+}
+
+fn collect_model_scope_owners(result: &PipelineResult) -> BTreeMap<String, BTreeSet<String>> {
+    let mut owners = BTreeMap::<String, BTreeSet<String>>::new();
+
+    for file in &result.files {
+        for model in &file.facts.models {
+            for scope in &model.scopes {
+                owners
+                    .entry(scope.clone())
+                    .or_default()
+                    .insert(model.fqcn.clone());
+            }
+        }
+    }
+
+    owners
+}
+
+fn resolve_model_scope_owner(
+    scope_owners: &BTreeMap<String, BTreeSet<String>>,
+    scope_name: &str,
+    explicit_owner: Option<&str>,
+) -> Option<String> {
+    let owners = scope_owners.get(scope_name)?;
+
+    if let Some(owner) = explicit_owner.map(|owner| owner.trim_start_matches('\\')) {
+        return owners.contains(owner).then(|| owner.to_string());
+    }
+
+    if owners.len() == 1 {
+        owners.iter().next().cloned()
+    } else {
+        None
+    }
+}
+
+fn scope_method_suffix(scope_name: &str) -> String {
+    let mut chars = scope_name.chars();
+    let Some(first) = chars.next() else {
+        return String::new();
+    };
+
+    first.to_uppercase().collect::<String>() + chars.as_str()
 }
 
 fn is_form_request_class(
@@ -1489,7 +1619,9 @@ mod tests {
 
     use super::analyze_controller_reachability;
     use crate::contracts::AnalysisRequest;
-    use crate::model::{AnalyzedFile, FileFacts, ModelFacts, ModelMethodFact};
+    use crate::model::{
+        AnalyzedFile, ControllerMethod, FileFacts, ModelFacts, ModelMethodFact, ScopeUsageFact,
+    };
     use crate::pipeline::PipelineResult;
 
     #[test]
@@ -1634,6 +1766,174 @@ class Invoice extends Model
         assert!(report.findings.iter().any(|finding| {
             finding.category == "unused_model_method"
                 && finding.symbol == "App\\Models\\Invoice::debugLabel"
+        }));
+    }
+
+    #[test]
+    fn ambiguous_scope_owner_stays_unsupported_and_unused() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let request: AnalysisRequest = serde_json::from_value(json!({
+            "contractVersion": "deadcode.analysis.v1",
+            "requestId": "req-model-scope-ambiguous",
+            "runtimeFingerprint": "fp-model-scope-ambiguous",
+            "manifest": {
+                "project": {
+                    "root": root,
+                    "composer": "composer.json"
+                },
+                "scan": {
+                    "targets": ["app"],
+                    "globs": ["**/*.php"]
+                },
+                "features": {
+                    "http_status": true,
+                    "request_usage": false,
+                    "resource_usage": false,
+                    "scopes_used": true
+                }
+            },
+            "runtime": {
+                "app": {
+                    "basePath": env!("CARGO_MANIFEST_DIR"),
+                    "laravelVersion": "12.0.0",
+                    "phpVersion": "8.3.0",
+                    "appEnv": "testing"
+                },
+                "routes": [
+                    {
+                        "routeId": "posts.index",
+                        "methods": ["GET"],
+                        "uri": "posts",
+                        "domain": null,
+                        "name": "posts.index",
+                        "prefix": null,
+                        "middleware": [],
+                        "where": {},
+                        "defaults": {},
+                        "bindings": [],
+                        "action": {
+                            "kind": "controller_method",
+                            "fqcn": "App\\Http\\Controllers\\PostController",
+                            "method": "index"
+                        }
+                    }
+                ]
+            }
+        }))
+        .expect("request should deserialize");
+        let controller_source = r#"<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Post;
+
+final class PostController
+{
+    public function index(): array
+    {
+        return Post::query()->published()->get()->all();
+    }
+}
+"#;
+        let post_source = r#"<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Post extends Model
+{
+    public function scopePublished($query)
+    {
+        return $query;
+    }
+}
+"#;
+        let article_source = r#"<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Article extends Model
+{
+    public function scopePublished($query)
+    {
+        return $query;
+    }
+}
+"#;
+        let result = PipelineResult {
+            files: vec![
+                AnalyzedFile {
+                    path: root.join("app/Http/Controllers/PostController.php"),
+                    relative_path: "app/Http/Controllers/PostController.php".to_string(),
+                    source_text: controller_source.to_string(),
+                    facts: FileFacts {
+                        controllers: vec![ControllerMethod {
+                            class_name: "PostController".to_string(),
+                            fqcn: "App\\Http\\Controllers\\PostController".to_string(),
+                            method_name: "index".to_string(),
+                            body_text: "public function index(): array\n    {\n        return Post::query()->published()->get()->all();\n    }".to_string(),
+                            scopes_used: vec![ScopeUsageFact {
+                                name: "published".to_string(),
+                                on: None,
+                            }],
+                            ..ControllerMethod::default()
+                        }],
+                        ..FileFacts::default()
+                    },
+                },
+                AnalyzedFile {
+                    path: root.join("app/Models/Post.php"),
+                    relative_path: "app/Models/Post.php".to_string(),
+                    source_text: post_source.to_string(),
+                    facts: FileFacts {
+                        models: vec![ModelFacts {
+                            class_name: "Post".to_string(),
+                            fqcn: "App\\Models\\Post".to_string(),
+                            scopes: vec!["published".to_string()],
+                            ..ModelFacts::default()
+                        }],
+                        ..FileFacts::default()
+                    },
+                },
+                AnalyzedFile {
+                    path: root.join("app/Models/Article.php"),
+                    relative_path: "app/Models/Article.php".to_string(),
+                    source_text: article_source.to_string(),
+                    facts: FileFacts {
+                        models: vec![ModelFacts {
+                            class_name: "Article".to_string(),
+                            fqcn: "App\\Models\\Article".to_string(),
+                            scopes: vec!["published".to_string()],
+                            ..ModelFacts::default()
+                        }],
+                        ..FileFacts::default()
+                    },
+                },
+            ],
+            route_bindings: Vec::new(),
+            partial: false,
+            duration_ms: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+        };
+
+        let report = analyze_controller_reachability(&request, &result);
+
+        assert!(!report.symbols.iter().any(|symbol| {
+            symbol.kind == "model_scope"
+                && symbol.symbol.ends_with("::published")
+                && symbol.reachable_from_runtime
+        }));
+        assert!(report.findings.iter().any(|finding| {
+            finding.category == "unused_model_scope"
+                && finding.symbol == "App\\Models\\Post::published"
+        }));
+        assert!(report.findings.iter().any(|finding| {
+            finding.category == "unused_model_scope"
+                && finding.symbol == "App\\Models\\Article::published"
         }));
     }
 }
