@@ -1,0 +1,48 @@
+{
+  "contractVersion": "deadcode.analysis.v1",
+  "requestId": "req-deadcode-model-scopes",
+  "runtimeFingerprint": "fp-deadcode-model-scopes",
+  "manifest": {
+    "project": {
+      "root": "C:\\Users\\garae\\.config\\superpowers\\worktrees\\laravel-dead-code-detector\\execute-phase1\\repos\\deadcore\\test\\fixtures\\integration\\deadcode-model-scopes",
+      "composer": "composer.json"
+    },
+    "scan": {
+      "targets": ["app", "routes"],
+      "globs": ["**/*.php"]
+    },
+    "features": {
+      "http_status": true,
+      "request_usage": false,
+      "resource_usage": false,
+      "scopes_used": true
+    }
+  },
+  "runtime": {
+    "app": {
+      "basePath": "C:\\Users\\garae\\.config\\superpowers\\worktrees\\laravel-dead-code-detector\\execute-phase1\\repos\\deadcore\\test\\fixtures\\integration\\deadcode-model-scopes",
+      "laravelVersion": "12.0.0",
+      "phpVersion": "8.3.0",
+      "appEnv": "testing"
+    },
+    "routes": [
+      {
+        "routeId": "posts.index",
+        "methods": ["GET", "HEAD"],
+        "uri": "api/posts",
+        "domain": null,
+        "name": "posts.index",
+        "prefix": "api",
+        "middleware": ["api"],
+        "where": {},
+        "defaults": {},
+        "bindings": [],
+        "action": {
+          "kind": "controller_method",
+          "fqcn": "App\\Http\\Controllers\\PostController",
+          "method": "index"
+        }
+      }
+    ]
+  }
+}
