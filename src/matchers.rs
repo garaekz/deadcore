@@ -319,22 +319,37 @@ fn detect_request_usage(
     let only_re = Regex::new(r"only\(\s*\[([^\]]*)\]").expect("only regex");
     let file_re = Regex::new(r#"file\(\s*['"]([^'"]+)['"]\s*\)"#).expect("file regex");
     let request_param_re =
-        Regex::new(r#"([A-Z][A-Za-z0-9_\\]*Request)\s+\$request"#).expect("request param regex");
+        Regex::new(r#"([A-Z][A-Za-z0-9_\\]*Request)\s+\$([A-Za-z_][A-Za-z0-9_]*)"#)
+            .expect("request param regex");
 
     let mut usage = Vec::new();
+    let mut seen_request_classes = BTreeSet::new();
 
-    if let Some(captures) = request_param_re.captures(method_text) {
-        if method_text.contains("$request->validated()") {
-            if let Some(class_name) = captures.get(1) {
-                usage.push(RequestUsageFact {
-                    method: "validated".to_string(),
-                    rules: Vec::new(),
-                    fields: Vec::new(),
-                    location: None,
-                    class_name: Some(resolve_class_name(class_name.as_str(), namespace, imports)),
-                });
-            }
+    for captures in request_param_re.captures_iter(method_text) {
+        let Some(class_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(variable_name) = captures.get(2) else {
+            continue;
+        };
+        let resolved_class_name = resolve_class_name(class_name.as_str(), namespace, imports);
+        if !seen_request_classes.insert(resolved_class_name.clone()) {
+            continue;
         }
+
+        let method = if method_text.contains(&format!("${}->validated()", variable_name.as_str())) {
+            "validated"
+        } else {
+            "typed_parameter"
+        };
+
+        usage.push(RequestUsageFact {
+            method: method.to_string(),
+            rules: Vec::new(),
+            fields: Vec::new(),
+            location: None,
+            class_name: Some(resolved_class_name),
+        });
     }
 
     for captures in validate_re.captures_iter(method_text) {

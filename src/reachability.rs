@@ -4,13 +4,15 @@ use regex::Regex;
 
 use crate::contracts::{AnalysisRequest, Entrypoint, RemovalChangeSet, RemovalPlan};
 use crate::deadcode_model::{
-    CONFIDENCE_HIGH, FINDING_CATEGORY_UNUSED_CONTROLLER_METHOD, Finding,
-    SYMBOL_KIND_CONTROLLER_METHOD, SymbolRecord,
+    Finding, SymbolRecord, CONFIDENCE_HIGH, FINDING_CATEGORY_UNUSED_CONTROLLER_CLASS,
+    FINDING_CATEGORY_UNUSED_CONTROLLER_METHOD, FINDING_CATEGORY_UNUSED_FORM_REQUEST,
+    FINDING_CATEGORY_UNUSED_RESOURCE_CLASS, SYMBOL_KIND_CONTROLLER_CLASS,
+    SYMBOL_KIND_CONTROLLER_METHOD, SYMBOL_KIND_FORM_REQUEST_CLASS, SYMBOL_KIND_RESOURCE_CLASS,
 };
-use crate::model::ControllerMethod;
+use crate::model::{AnalyzedFile, ControllerMethod};
 use crate::parser::line_range_for_span;
 use crate::pipeline::PipelineResult;
-use crate::source_index::{SourceClass, SourceIndex};
+use crate::source_index::{extract_balanced_region, SourceClass, SourceIndex};
 
 pub struct ControllerReachabilityReport {
     pub entrypoints: Vec<Entrypoint>,
@@ -19,11 +21,20 @@ pub struct ControllerReachabilityReport {
     pub removal_plan: RemovalPlan,
 }
 
+#[derive(Debug, Clone)]
+struct ControllerClassReport {
+    fqcn: String,
+    relative_path: String,
+    reachable_from_runtime: bool,
+    line_range: Option<(usize, usize)>,
+}
+
 pub fn analyze_controller_reachability(
     request: &AnalysisRequest,
     result: &PipelineResult,
 ) -> ControllerReachabilityReport {
-    let call_graph = build_controller_call_graph(result);
+    let source_index = SourceIndex::build(result);
+    let call_graph = build_controller_call_graph(result, &source_index);
     let mut reachable_actions = BTreeSet::new();
     let mut worklist = VecDeque::new();
     let mut entrypoints = Vec::new();
@@ -53,21 +64,18 @@ pub fn analyze_controller_reachability(
         }
     }
 
+    let reachable_form_requests =
+        collect_reachable_form_requests(result, &source_index, &reachable_actions);
+    let reachable_resources = collect_reachable_resources(result, &reachable_actions);
     let mut symbols = Vec::new();
     let mut findings = Vec::new();
     let mut change_sets = Vec::new();
+    let mut controller_classes = BTreeMap::<String, ControllerClassReport>::new();
 
     for (file, controller) in result.controller_methods() {
         let symbol = format!("{}::{}", controller.fqcn, controller.method_name);
         let reachable_from_runtime = reachable_actions.contains(&symbol);
-        let line_range = file.source_text.find(&controller.body_text).map(|start| {
-            line_range_for_span(
-                file.source_text.as_bytes(),
-                start,
-                start + controller.body_text.len(),
-            )
-        });
-
+        let line_range = find_method_line_range(file, controller);
         let (start_line, end_line) = line_range
             .map(|(start, end)| (Some(start), Some(end)))
             .unwrap_or((None, None));
@@ -80,6 +88,18 @@ pub fn analyze_controller_reachability(
             start_line,
             end_line,
         });
+
+        controller_classes
+            .entry(controller.fqcn.clone())
+            .and_modify(|report| report.reachable_from_runtime |= reachable_from_runtime)
+            .or_insert_with(|| ControllerClassReport {
+                fqcn: controller.fqcn.clone(),
+                relative_path: file.relative_path.clone(),
+                reachable_from_runtime,
+                line_range: source_index
+                    .get(&controller.fqcn)
+                    .and_then(find_class_line_range),
+            });
 
         if reachable_from_runtime {
             continue;
@@ -104,6 +124,128 @@ pub fn analyze_controller_reachability(
         }
     }
 
+    for report in controller_classes.into_values() {
+        let (start_line, end_line) = report
+            .line_range
+            .map(|(start, end)| (Some(start), Some(end)))
+            .unwrap_or((None, None));
+
+        symbols.push(SymbolRecord {
+            kind: SYMBOL_KIND_CONTROLLER_CLASS.to_string(),
+            symbol: report.fqcn.clone(),
+            file: report.relative_path.clone(),
+            reachable_from_runtime: report.reachable_from_runtime,
+            start_line,
+            end_line,
+        });
+
+        if report.reachable_from_runtime {
+            continue;
+        }
+
+        findings.push(Finding {
+            symbol: report.fqcn.clone(),
+            category: FINDING_CATEGORY_UNUSED_CONTROLLER_CLASS.to_string(),
+            confidence: CONFIDENCE_HIGH.to_string(),
+            file: report.relative_path.clone(),
+            start_line,
+            end_line,
+        });
+
+        if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
+            change_sets.push(RemovalChangeSet {
+                file: report.relative_path,
+                symbol: report.fqcn,
+                start_line,
+                end_line,
+            });
+        }
+    }
+
+    for class in source_index.classes.values() {
+        if !is_form_request_class(class, &source_index, &mut BTreeSet::new()) {
+            continue;
+        }
+
+        let (start_line, end_line) = find_class_line_range(class)
+            .map(|(start, end)| (Some(start), Some(end)))
+            .unwrap_or((None, None));
+        let reachable_from_runtime = reachable_form_requests.contains(&class.fqcn);
+
+        symbols.push(SymbolRecord {
+            kind: SYMBOL_KIND_FORM_REQUEST_CLASS.to_string(),
+            symbol: class.fqcn.clone(),
+            file: class.relative_path.clone(),
+            reachable_from_runtime,
+            start_line,
+            end_line,
+        });
+
+        if reachable_from_runtime {
+            continue;
+        }
+
+        findings.push(Finding {
+            symbol: class.fqcn.clone(),
+            category: FINDING_CATEGORY_UNUSED_FORM_REQUEST.to_string(),
+            confidence: CONFIDENCE_HIGH.to_string(),
+            file: class.relative_path.clone(),
+            start_line,
+            end_line,
+        });
+
+        if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
+            change_sets.push(RemovalChangeSet {
+                file: class.relative_path.clone(),
+                symbol: class.fqcn.clone(),
+                start_line,
+                end_line,
+            });
+        }
+    }
+
+    for class in source_index.classes.values() {
+        if !is_resource_class(class, &source_index, &mut BTreeSet::new()) {
+            continue;
+        }
+
+        let (start_line, end_line) = find_class_line_range(class)
+            .map(|(start, end)| (Some(start), Some(end)))
+            .unwrap_or((None, None));
+        let reachable_from_runtime = reachable_resources.contains(&class.fqcn);
+
+        symbols.push(SymbolRecord {
+            kind: SYMBOL_KIND_RESOURCE_CLASS.to_string(),
+            symbol: class.fqcn.clone(),
+            file: class.relative_path.clone(),
+            reachable_from_runtime,
+            start_line,
+            end_line,
+        });
+
+        if reachable_from_runtime {
+            continue;
+        }
+
+        findings.push(Finding {
+            symbol: class.fqcn.clone(),
+            category: FINDING_CATEGORY_UNUSED_RESOURCE_CLASS.to_string(),
+            confidence: CONFIDENCE_HIGH.to_string(),
+            file: class.relative_path.clone(),
+            start_line,
+            end_line,
+        });
+
+        if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
+            change_sets.push(RemovalChangeSet {
+                file: class.relative_path.clone(),
+                symbol: class.fqcn.clone(),
+                start_line,
+                end_line,
+            });
+        }
+    }
+
     entrypoints
         .sort_by(|a, b| (&a.kind, &a.symbol, &a.source).cmp(&(&b.kind, &b.symbol, &b.source)));
     symbols.sort_by(|a, b| (&a.symbol, &a.file).cmp(&(&b.symbol, &b.file)));
@@ -118,10 +260,58 @@ pub fn analyze_controller_reachability(
     }
 }
 
-fn build_controller_call_graph(result: &PipelineResult) -> BTreeMap<String, BTreeSet<String>> {
+fn collect_reachable_form_requests(
+    result: &PipelineResult,
+    source_index: &SourceIndex,
+    reachable_actions: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let mut reachable_form_requests = BTreeSet::new();
+
+    for (_, controller) in result.controller_methods() {
+        let symbol = format!("{}::{}", controller.fqcn, controller.method_name);
+        if !reachable_actions.contains(&symbol) {
+            continue;
+        }
+
+        for usage in &controller.request_usage {
+            let Some(class_name) = &usage.class_name else {
+                continue;
+            };
+            if is_form_request_fqcn(class_name, source_index, &mut BTreeSet::new()) {
+                reachable_form_requests.insert(class_name.clone());
+            }
+        }
+    }
+
+    reachable_form_requests
+}
+
+fn collect_reachable_resources(
+    result: &PipelineResult,
+    reachable_actions: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let mut reachable_resources = BTreeSet::new();
+
+    for (_, controller) in result.controller_methods() {
+        let symbol = format!("{}::{}", controller.fqcn, controller.method_name);
+        if !reachable_actions.contains(&symbol) {
+            continue;
+        }
+
+        for usage in &controller.resource_usage {
+            reachable_resources.insert(usage.class_name.clone());
+        }
+    }
+
+    reachable_resources
+}
+
+fn build_controller_call_graph(
+    result: &PipelineResult,
+    source_index: &SourceIndex,
+) -> BTreeMap<String, BTreeSet<String>> {
     let mut methods_by_controller = BTreeMap::<String, BTreeSet<String>>::new();
     let mut controller_records = Vec::new();
-    let source_index = SourceIndex::build(result);
 
     for (file, controller) in result.controller_methods() {
         methods_by_controller
@@ -132,17 +322,110 @@ fn build_controller_call_graph(result: &PipelineResult) -> BTreeMap<String, BTre
     }
 
     let mut call_graph = BTreeMap::<String, BTreeSet<String>>::new();
-    for (relative_path, controller) in controller_records {
+    for (_, controller) in controller_records {
         let symbol = format!("{}::{}", controller.fqcn, controller.method_name);
-        let source_class = source_index
-            .classes
-            .values()
-            .find(|class| class.relative_path == relative_path);
+        let source_class = source_index.get(&controller.fqcn);
         let callees = collect_controller_callees(controller, source_class, &methods_by_controller);
         call_graph.insert(symbol, callees);
     }
 
     call_graph
+}
+
+fn find_method_line_range(
+    file: &AnalyzedFile,
+    controller: &ControllerMethod,
+) -> Option<(usize, usize)> {
+    file.source_text.find(&controller.body_text).map(|start| {
+        line_range_for_span(
+            file.source_text.as_bytes(),
+            start,
+            start + controller.body_text.len(),
+        )
+    })
+}
+
+fn find_class_line_range(class: &SourceClass) -> Option<(usize, usize)> {
+    let class_re = Regex::new(&format!(
+        r#"(?m)^\s*(?:final\s+|abstract\s+)?class\s+{}\b"#,
+        regex::escape(&class.class_name)
+    ))
+    .expect("class line range regex");
+    let class_match = class_re.find(&class.source_text)?;
+    let brace_offset = class.source_text[class_match.end()..].find('{')?;
+    let brace_start = class_match.end() + brace_offset;
+    let (_, _, class_end_relative) =
+        extract_balanced_region(&class.source_text[brace_start..], '{', '}')?;
+
+    Some(line_range_for_span(
+        class.source_text.as_bytes(),
+        class_match.start(),
+        brace_start + class_end_relative + 1,
+    ))
+}
+
+fn is_form_request_class(
+    class: &SourceClass,
+    source_index: &SourceIndex,
+    visited: &mut BTreeSet<String>,
+) -> bool {
+    is_form_request_fqcn(&class.fqcn, source_index, visited)
+}
+
+fn is_form_request_fqcn(
+    fqcn: &str,
+    source_index: &SourceIndex,
+    visited: &mut BTreeSet<String>,
+) -> bool {
+    if fqcn == "Illuminate\\Foundation\\Http\\FormRequest" {
+        return true;
+    }
+
+    if !visited.insert(fqcn.to_string()) {
+        return false;
+    }
+
+    let Some(class) = source_index.get(fqcn) else {
+        return false;
+    };
+    let Some(extends) = &class.extends else {
+        return false;
+    };
+
+    is_form_request_fqcn(extends, source_index, visited)
+}
+
+fn is_resource_class(
+    class: &SourceClass,
+    source_index: &SourceIndex,
+    visited: &mut BTreeSet<String>,
+) -> bool {
+    is_resource_fqcn(&class.fqcn, source_index, visited)
+}
+
+fn is_resource_fqcn(
+    fqcn: &str,
+    source_index: &SourceIndex,
+    visited: &mut BTreeSet<String>,
+) -> bool {
+    if fqcn == "Illuminate\\Http\\Resources\\Json\\JsonResource"
+        || fqcn == "Illuminate\\Http\\Resources\\Json\\ResourceCollection"
+    {
+        return true;
+    }
+
+    if !visited.insert(fqcn.to_string()) {
+        return false;
+    }
+
+    let Some(class) = source_index.get(fqcn) else {
+        return false;
+    };
+    let Some(extends) = &class.extends else {
+        return false;
+    };
+
+    is_resource_fqcn(extends, source_index, visited)
 }
 
 fn collect_controller_callees(
