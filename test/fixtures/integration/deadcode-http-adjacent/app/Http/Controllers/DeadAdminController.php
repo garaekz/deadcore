@@ -14,4 +14,12 @@ final class DeadAdminController
             'result' => 'ignored',
         ]);
     }
+
+    public function export(UnusedAuditRequest $request): UnusedAuditResource
+    {
+        return new UnusedAuditResource([
+            'actor' => $request->input('actor'),
+            'result' => 'exported',
+        ]);
+    }
 }
