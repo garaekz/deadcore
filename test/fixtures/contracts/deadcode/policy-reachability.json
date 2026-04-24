@@ -1,0 +1,60 @@
+{
+  "contractVersion": "deadcode.analysis.v1",
+  "requestId": "req-deadcode-policy-reachability",
+  "runtimeFingerprint": "fp-deadcode-policy-reachability",
+  "manifest": {
+    "project": {
+      "root": "C:\\Users\\garae\\.config\\superpowers\\worktrees\\laravel-dead-code-detector\\execute-phase1\\repos\\deadcore\\test\\fixtures\\integration\\deadcode-policy-reachability",
+      "composer": "composer.json"
+    },
+    "scan": {
+      "targets": ["app", "routes"],
+      "globs": ["**/*.php"]
+    },
+    "features": {
+      "http_status": true,
+      "request_usage": true,
+      "resource_usage": true
+    }
+  },
+  "runtime": {
+    "app": {
+      "basePath": "C:\\Users\\garae\\.config\\superpowers\\worktrees\\laravel-dead-code-detector\\execute-phase1\\repos\\deadcore\\test\\fixtures\\integration\\deadcode-policy-reachability",
+      "laravelVersion": "12.0.0",
+      "phpVersion": "8.3.0",
+      "appEnv": "testing"
+    },
+    "routes": [
+      {
+        "routeId": "policy-posts.show",
+        "methods": ["GET"],
+        "uri": "api/policy-posts/{policyPost}",
+        "domain": null,
+        "name": "policy-posts.show",
+        "prefix": "api",
+        "middleware": ["api"],
+        "where": {},
+        "defaults": {},
+        "bindings": [
+          {
+            "parameter": "policyPost",
+            "kind": "implicit_model",
+            "targetFqcn": "App\\Models\\PolicyPost",
+            "isImplicit": true
+          }
+        ],
+        "action": {
+          "kind": "controller_method",
+          "fqcn": "App\\Http\\Controllers\\PolicyPostController",
+          "method": "show"
+        }
+      }
+    ],
+    "policies": [
+      {
+        "modelFqcn": "App\\Models\\PolicyPost",
+        "policyFqcn": "App\\Policies\\ReachablePolicyPostPolicy"
+      }
+    ]
+  }
+}

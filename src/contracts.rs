@@ -104,6 +104,8 @@ pub struct RuntimeSnapshot {
     #[serde(default)]
     pub routes: Vec<RuntimeRoute>,
     #[serde(default)]
+    pub policies: Vec<RuntimePolicy>,
+    #[serde(default)]
     pub commands: Vec<RuntimeCommand>,
     #[serde(default)]
     pub listeners: Vec<RuntimeListener>,
@@ -163,6 +165,15 @@ pub struct RuntimeCommand {
     pub signature: String,
     pub fqcn: String,
     pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimePolicy {
+    #[serde(rename = "modelFqcn")]
+    pub model_fqcn: String,
+    #[serde(rename = "policyFqcn")]
+    pub policy_fqcn: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
