@@ -37,6 +37,9 @@ pub struct ModelFacts {
     pub relationships: Vec<ModelRelationshipFact>,
     pub scopes: Vec<String>,
     pub attributes: Vec<String>,
+    pub accessors: Vec<ModelAttributeFact>,
+    pub mutators: Vec<ModelAttributeFact>,
+    pub appends: Vec<String>,
     pub methods: Vec<ModelMethodFact>,
 }
 
@@ -44,6 +47,13 @@ pub struct ModelFacts {
 pub struct ModelMethodFact {
     pub name: String,
     pub body_text: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ModelAttributeFact {
+    pub name: String,
+    pub body_text: String,
+    pub via: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

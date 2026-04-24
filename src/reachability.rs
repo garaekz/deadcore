@@ -7,16 +7,20 @@ use crate::deadcode_model::{
     CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, FINDING_CATEGORY_UNUSED_COMMAND_CLASS,
     FINDING_CATEGORY_UNUSED_CONTROLLER_CLASS, FINDING_CATEGORY_UNUSED_CONTROLLER_METHOD,
     FINDING_CATEGORY_UNUSED_FORM_REQUEST, FINDING_CATEGORY_UNUSED_JOB_CLASS,
-    FINDING_CATEGORY_UNUSED_LISTENER_CLASS, FINDING_CATEGORY_UNUSED_MODEL_METHOD,
+    FINDING_CATEGORY_UNUSED_LISTENER_CLASS, FINDING_CATEGORY_UNUSED_MODEL_ACCESSOR,
+    FINDING_CATEGORY_UNUSED_MODEL_METHOD, FINDING_CATEGORY_UNUSED_MODEL_MUTATOR,
     FINDING_CATEGORY_UNUSED_MODEL_RELATIONSHIP, FINDING_CATEGORY_UNUSED_MODEL_SCOPE,
     FINDING_CATEGORY_UNUSED_POLICY_CLASS, FINDING_CATEGORY_UNUSED_RESOURCE_CLASS,
     FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding, SYMBOL_KIND_COMMAND_CLASS,
     SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD, SYMBOL_KIND_FORM_REQUEST_CLASS,
-    SYMBOL_KIND_JOB_CLASS, SYMBOL_KIND_LISTENER_CLASS, SYMBOL_KIND_MODEL_METHOD,
-    SYMBOL_KIND_MODEL_RELATIONSHIP, SYMBOL_KIND_MODEL_SCOPE, SYMBOL_KIND_POLICY_CLASS,
-    SYMBOL_KIND_RESOURCE_CLASS, SYMBOL_KIND_SUBSCRIBER_CLASS, SymbolRecord,
+    SYMBOL_KIND_JOB_CLASS, SYMBOL_KIND_LISTENER_CLASS, SYMBOL_KIND_MODEL_ACCESSOR,
+    SYMBOL_KIND_MODEL_METHOD, SYMBOL_KIND_MODEL_MUTATOR, SYMBOL_KIND_MODEL_RELATIONSHIP,
+    SYMBOL_KIND_MODEL_SCOPE, SYMBOL_KIND_POLICY_CLASS, SYMBOL_KIND_RESOURCE_CLASS,
+    SYMBOL_KIND_SUBSCRIBER_CLASS, SymbolRecord,
 };
-use crate::model::{AnalyzedFile, ControllerMethod, ModelMethodFact, ModelRelationshipFact};
+use crate::model::{
+    AnalyzedFile, ControllerMethod, ModelAttributeFact, ModelMethodFact, ModelRelationshipFact,
+};
 use crate::parser::line_range_for_span;
 use crate::pipeline::PipelineResult;
 use crate::source_index::{
@@ -168,6 +172,26 @@ pub fn analyze_controller_reachability(
         &reachable_jobs,
         &reachable_policies,
     );
+    let reachable_model_accessors = collect_reachable_model_accessors(
+        result,
+        &source_index,
+        &reachable_actions,
+        &reachable_commands,
+        &reachable_listeners,
+        &reachable_subscribers,
+        &reachable_jobs,
+        &reachable_policies,
+    );
+    let reachable_model_mutators = collect_reachable_model_mutators(
+        result,
+        &source_index,
+        &reachable_actions,
+        &reachable_commands,
+        &reachable_listeners,
+        &reachable_subscribers,
+        &reachable_jobs,
+        &reachable_policies,
+    );
     let reachable_model_scopes = collect_reachable_model_scopes(result, &reachable_actions);
     let mut symbols = Vec::new();
     let mut findings = Vec::new();
@@ -269,6 +293,68 @@ pub fn analyze_controller_reachability(
 
     for file in &result.files {
         for model in &file.facts.models {
+            for accessor in &model.accessors {
+                let symbol = format!("{}::{}", model.fqcn, accessor.name);
+                let reachable_from_runtime = reachable_model_accessors.contains(&symbol);
+                let line_range = find_model_attribute_line_range(file, accessor);
+                let (start_line, end_line) = line_range
+                    .map(|(start, end)| (Some(start), Some(end)))
+                    .unwrap_or((None, None));
+
+                symbols.push(SymbolRecord {
+                    kind: SYMBOL_KIND_MODEL_ACCESSOR.to_string(),
+                    symbol: symbol.clone(),
+                    file: file.relative_path.clone(),
+                    reachable_from_runtime,
+                    start_line,
+                    end_line,
+                });
+
+                if reachable_from_runtime {
+                    continue;
+                }
+
+                findings.push(Finding {
+                    symbol,
+                    category: FINDING_CATEGORY_UNUSED_MODEL_ACCESSOR.to_string(),
+                    confidence: CONFIDENCE_HIGH.to_string(),
+                    file: file.relative_path.clone(),
+                    start_line,
+                    end_line,
+                });
+            }
+
+            for mutator in &model.mutators {
+                let symbol = format!("{}::{}", model.fqcn, mutator.name);
+                let reachable_from_runtime = reachable_model_mutators.contains(&symbol);
+                let line_range = find_model_attribute_line_range(file, mutator);
+                let (start_line, end_line) = line_range
+                    .map(|(start, end)| (Some(start), Some(end)))
+                    .unwrap_or((None, None));
+
+                symbols.push(SymbolRecord {
+                    kind: SYMBOL_KIND_MODEL_MUTATOR.to_string(),
+                    symbol: symbol.clone(),
+                    file: file.relative_path.clone(),
+                    reachable_from_runtime,
+                    start_line,
+                    end_line,
+                });
+
+                if reachable_from_runtime {
+                    continue;
+                }
+
+                findings.push(Finding {
+                    symbol,
+                    category: FINDING_CATEGORY_UNUSED_MODEL_MUTATOR.to_string(),
+                    confidence: CONFIDENCE_HIGH.to_string(),
+                    file: file.relative_path.clone(),
+                    start_line,
+                    end_line,
+                });
+            }
+
             for method in &model.methods {
                 let symbol = format!("{}::{}", model.fqcn, method.name);
                 let reachable_from_runtime = reachable_model_methods.contains(&symbol);
@@ -845,6 +931,186 @@ fn collect_reachable_model_methods(
     reachable_model_methods
 }
 
+fn collect_reachable_model_accessors(
+    result: &PipelineResult,
+    source_index: &SourceIndex,
+    reachable_actions: &BTreeSet<String>,
+    reachable_commands: &BTreeSet<String>,
+    reachable_listeners: &BTreeSet<String>,
+    reachable_subscribers: &BTreeSet<String>,
+    reachable_jobs: &BTreeSet<String>,
+    reachable_policies: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let model_accessors = result
+        .files
+        .iter()
+        .flat_map(|file| file.facts.models.iter())
+        .map(|model| {
+            (
+                model.fqcn.clone(),
+                model
+                    .accessors
+                    .iter()
+                    .map(|accessor| accessor.name.clone())
+                    .collect::<BTreeSet<_>>(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let model_appends = result
+        .files
+        .iter()
+        .flat_map(|file| file.facts.models.iter())
+        .map(|model| (model.fqcn.clone(), model.appends.iter().cloned().collect()))
+        .collect::<BTreeMap<String, BTreeSet<String>>>();
+    let mut reachable_model_accessors = BTreeSet::new();
+
+    for (_, controller) in result.controller_methods() {
+        let symbol = format!("{}::{}", controller.fqcn, controller.method_name);
+        if !reachable_actions.contains(&symbol) {
+            continue;
+        }
+
+        let Some(source_class) = source_index.get(&controller.fqcn) else {
+            continue;
+        };
+
+        collect_explicitly_read_model_attributes_from_text(
+            &mut reachable_model_accessors,
+            &controller.body_text,
+            source_class,
+            &model_accessors,
+            &model_appends,
+            None,
+        );
+    }
+
+    collect_reachable_model_accessors_from_runtime_roots(
+        &mut reachable_model_accessors,
+        source_index,
+        reachable_commands,
+        &["handle"],
+        &model_accessors,
+        &model_appends,
+    );
+    collect_reachable_model_accessors_from_runtime_roots(
+        &mut reachable_model_accessors,
+        source_index,
+        reachable_listeners,
+        &["handle"],
+        &model_accessors,
+        &model_appends,
+    );
+    collect_reachable_model_accessors_from_runtime_roots(
+        &mut reachable_model_accessors,
+        source_index,
+        reachable_subscribers,
+        &["subscribe"],
+        &model_accessors,
+        &model_appends,
+    );
+    collect_reachable_model_accessors_from_runtime_roots(
+        &mut reachable_model_accessors,
+        source_index,
+        reachable_jobs,
+        &["handle"],
+        &model_accessors,
+        &model_appends,
+    );
+    collect_reachable_model_accessors_from_policies(
+        &mut reachable_model_accessors,
+        source_index,
+        reachable_policies,
+        &model_accessors,
+        &model_appends,
+    );
+
+    reachable_model_accessors
+}
+
+fn collect_reachable_model_mutators(
+    result: &PipelineResult,
+    source_index: &SourceIndex,
+    reachable_actions: &BTreeSet<String>,
+    reachable_commands: &BTreeSet<String>,
+    reachable_listeners: &BTreeSet<String>,
+    reachable_subscribers: &BTreeSet<String>,
+    reachable_jobs: &BTreeSet<String>,
+    reachable_policies: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let model_mutators = result
+        .files
+        .iter()
+        .flat_map(|file| file.facts.models.iter())
+        .map(|model| {
+            (
+                model.fqcn.clone(),
+                model
+                    .mutators
+                    .iter()
+                    .map(|mutator| mutator.name.clone())
+                    .collect::<BTreeSet<_>>(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut reachable_model_mutators = BTreeSet::new();
+
+    for (_, controller) in result.controller_methods() {
+        let symbol = format!("{}::{}", controller.fqcn, controller.method_name);
+        if !reachable_actions.contains(&symbol) {
+            continue;
+        }
+
+        let Some(source_class) = source_index.get(&controller.fqcn) else {
+            continue;
+        };
+
+        collect_explicitly_written_model_attributes_from_text(
+            &mut reachable_model_mutators,
+            &controller.body_text,
+            source_class,
+            &model_mutators,
+            None,
+        );
+    }
+
+    collect_reachable_model_mutators_from_runtime_roots(
+        &mut reachable_model_mutators,
+        source_index,
+        reachable_commands,
+        &["handle"],
+        &model_mutators,
+    );
+    collect_reachable_model_mutators_from_runtime_roots(
+        &mut reachable_model_mutators,
+        source_index,
+        reachable_listeners,
+        &["handle"],
+        &model_mutators,
+    );
+    collect_reachable_model_mutators_from_runtime_roots(
+        &mut reachable_model_mutators,
+        source_index,
+        reachable_subscribers,
+        &["subscribe"],
+        &model_mutators,
+    );
+    collect_reachable_model_mutators_from_runtime_roots(
+        &mut reachable_model_mutators,
+        source_index,
+        reachable_jobs,
+        &["handle"],
+        &model_mutators,
+    );
+    collect_reachable_model_mutators_from_policies(
+        &mut reachable_model_mutators,
+        source_index,
+        reachable_policies,
+        &model_mutators,
+    );
+
+    reachable_model_mutators
+}
+
 fn collect_reachable_model_scopes(
     result: &PipelineResult,
     reachable_actions: &BTreeSet<String>,
@@ -1012,6 +1278,114 @@ fn collect_reachable_model_methods_from_policies(
     }
 }
 
+fn collect_reachable_model_accessors_from_runtime_roots(
+    reachable_model_accessors: &mut BTreeSet<String>,
+    source_index: &SourceIndex,
+    runtime_roots: &BTreeSet<String>,
+    entrypoint_methods: &[&str],
+    model_accessors: &BTreeMap<String, BTreeSet<String>>,
+    model_appends: &BTreeMap<String, BTreeSet<String>>,
+) {
+    for fqcn in runtime_roots {
+        let Some(source_class) = source_index.get(fqcn) else {
+            continue;
+        };
+
+        for method_name in entrypoint_methods {
+            let Some(method_text) = extract_method_text(&source_class.source_text, method_name)
+            else {
+                continue;
+            };
+
+            collect_explicitly_read_model_attributes_from_text(
+                reachable_model_accessors,
+                &method_text,
+                source_class,
+                model_accessors,
+                model_appends,
+                None,
+            );
+        }
+    }
+}
+
+fn collect_reachable_model_accessors_from_policies(
+    reachable_model_accessors: &mut BTreeSet<String>,
+    source_index: &SourceIndex,
+    reachable_policies: &BTreeSet<String>,
+    model_accessors: &BTreeMap<String, BTreeSet<String>>,
+    model_appends: &BTreeMap<String, BTreeSet<String>>,
+) {
+    for fqcn in reachable_policies {
+        let Some(source_class) = source_index.get(fqcn) else {
+            continue;
+        };
+
+        for method_text in extract_policy_entrypoint_texts(source_class) {
+            collect_explicitly_read_model_attributes_from_text(
+                reachable_model_accessors,
+                &method_text,
+                source_class,
+                model_accessors,
+                model_appends,
+                None,
+            );
+        }
+    }
+}
+
+fn collect_reachable_model_mutators_from_runtime_roots(
+    reachable_model_mutators: &mut BTreeSet<String>,
+    source_index: &SourceIndex,
+    runtime_roots: &BTreeSet<String>,
+    entrypoint_methods: &[&str],
+    model_mutators: &BTreeMap<String, BTreeSet<String>>,
+) {
+    for fqcn in runtime_roots {
+        let Some(source_class) = source_index.get(fqcn) else {
+            continue;
+        };
+
+        for method_name in entrypoint_methods {
+            let Some(method_text) = extract_method_text(&source_class.source_text, method_name)
+            else {
+                continue;
+            };
+
+            collect_explicitly_written_model_attributes_from_text(
+                reachable_model_mutators,
+                &method_text,
+                source_class,
+                model_mutators,
+                None,
+            );
+        }
+    }
+}
+
+fn collect_reachable_model_mutators_from_policies(
+    reachable_model_mutators: &mut BTreeSet<String>,
+    source_index: &SourceIndex,
+    reachable_policies: &BTreeSet<String>,
+    model_mutators: &BTreeMap<String, BTreeSet<String>>,
+) {
+    for fqcn in reachable_policies {
+        let Some(source_class) = source_index.get(fqcn) else {
+            continue;
+        };
+
+        for method_text in extract_policy_entrypoint_texts(source_class) {
+            collect_explicitly_written_model_attributes_from_text(
+                reachable_model_mutators,
+                &method_text,
+                source_class,
+                model_mutators,
+                None,
+            );
+        }
+    }
+}
+
 fn collect_reachable_model_relationships_from_runtime_roots(
     reachable_model_relationships: &mut BTreeSet<String>,
     source_index: &SourceIndex,
@@ -1174,6 +1548,19 @@ fn find_model_method_line_range(
             file.source_text.as_bytes(),
             start,
             start + method.body_text.len(),
+        )
+    })
+}
+
+fn find_model_attribute_line_range(
+    file: &AnalyzedFile,
+    attribute: &ModelAttributeFact,
+) -> Option<(usize, usize)> {
+    file.source_text.find(&attribute.body_text).map(|start| {
+        line_range_for_span(
+            file.source_text.as_bytes(),
+            start,
+            start + attribute.body_text.len(),
         )
     })
 }
@@ -1719,6 +2106,184 @@ fn extract_called_model_methods_from_text(
     called
 }
 
+fn collect_explicitly_read_model_attributes_from_text(
+    reachable_model_accessors: &mut BTreeSet<String>,
+    text: &str,
+    source_class: &SourceClass,
+    model_accessors: &BTreeMap<String, BTreeSet<String>>,
+    model_appends: &BTreeMap<String, BTreeSet<String>>,
+    implicit_model_fqcn: Option<&str>,
+) {
+    for (model_fqcn, attribute_name) in extract_read_model_attributes_from_text(
+        text,
+        source_class,
+        model_accessors,
+        model_appends,
+        implicit_model_fqcn,
+    ) {
+        reachable_model_accessors.insert(format!("{model_fqcn}::{attribute_name}"));
+    }
+}
+
+fn collect_explicitly_written_model_attributes_from_text(
+    reachable_model_mutators: &mut BTreeSet<String>,
+    text: &str,
+    source_class: &SourceClass,
+    model_mutators: &BTreeMap<String, BTreeSet<String>>,
+    implicit_model_fqcn: Option<&str>,
+) {
+    for (model_fqcn, attribute_name) in
+        extract_written_model_attributes_from_text(text, source_class, model_mutators, implicit_model_fqcn)
+    {
+        reachable_model_mutators.insert(format!("{model_fqcn}::{attribute_name}"));
+    }
+}
+
+fn extract_read_model_attributes_from_text(
+    text: &str,
+    source_class: &SourceClass,
+    model_accessors: &BTreeMap<String, BTreeSet<String>>,
+    model_appends: &BTreeMap<String, BTreeSet<String>>,
+    implicit_model_fqcn: Option<&str>,
+) -> BTreeSet<(String, String)> {
+    let mut called = BTreeSet::new();
+    let known_models = model_accessors.keys().cloned().collect::<BTreeSet<_>>();
+    let model_variables =
+        collect_model_variables_from_text(text, source_class, &known_models, implicit_model_fqcn);
+
+    let instance_access_re =
+        Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)\b"#)
+            .expect("accessor instance access regex");
+    for captures in instance_access_re.captures_iter(text) {
+        let Some(variable_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(attribute_name) = captures.get(2) else {
+            continue;
+        };
+        let Some(full_match) = captures.get(0) else {
+            continue;
+        };
+        let suffix = text[full_match.end()..].trim_start();
+        if suffix.starts_with('(') || starts_with_assignment_operator(suffix) {
+            continue;
+        }
+        let Some(model_fqcn) = model_variables.get(variable_name.as_str()) else {
+            continue;
+        };
+        register_model_attribute_reference(
+            &mut called,
+            model_accessors,
+            model_fqcn,
+            attribute_name.as_str(),
+        );
+    }
+
+    let get_attribute_re = Regex::new(
+        r#"\$([A-Za-z_][A-Za-z0-9_]*)->(?:getAttribute|getAttributeValue)\s*\(\s*['"]([^'"]+)['"]\s*\)"#,
+    )
+    .expect("explicit getAttribute regex");
+    for captures in get_attribute_re.captures_iter(text) {
+        let Some(variable_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(attribute_name) = captures.get(2) else {
+            continue;
+        };
+        let Some(model_fqcn) = model_variables.get(variable_name.as_str()) else {
+            continue;
+        };
+        register_model_attribute_reference(
+            &mut called,
+            model_accessors,
+            model_fqcn,
+            attribute_name.as_str(),
+        );
+    }
+
+    let serialize_re =
+        Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)->(toArray|attributesToArray|toJson|jsonSerialize)\s*\("#)
+            .expect("model serialization regex");
+    for captures in serialize_re.captures_iter(text) {
+        let Some(variable_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(model_fqcn) = model_variables.get(variable_name.as_str()) else {
+            continue;
+        };
+        let Some(appended) = model_appends.get(model_fqcn) else {
+            continue;
+        };
+        for attribute_name in appended {
+            register_model_attribute_reference(
+                &mut called,
+                model_accessors,
+                model_fqcn,
+                attribute_name,
+            );
+        }
+    }
+
+    called
+}
+
+fn extract_written_model_attributes_from_text(
+    text: &str,
+    source_class: &SourceClass,
+    model_mutators: &BTreeMap<String, BTreeSet<String>>,
+    implicit_model_fqcn: Option<&str>,
+) -> BTreeSet<(String, String)> {
+    let mut called = BTreeSet::new();
+    let known_models = model_mutators.keys().cloned().collect::<BTreeSet<_>>();
+    let model_variables =
+        collect_model_variables_from_text(text, source_class, &known_models, implicit_model_fqcn);
+
+    let assignment_re = Regex::new(
+        r#"\$([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)\s*(?:=|\+=|-=|\.=|\*=|/=|%=|\?\?=)"#,
+    )
+    .expect("mutator assignment regex");
+    for captures in assignment_re.captures_iter(text) {
+        let Some(variable_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(attribute_name) = captures.get(2) else {
+            continue;
+        };
+        let Some(model_fqcn) = model_variables.get(variable_name.as_str()) else {
+            continue;
+        };
+        register_model_attribute_reference(
+            &mut called,
+            model_mutators,
+            model_fqcn,
+            attribute_name.as_str(),
+        );
+    }
+
+    let set_attribute_re =
+        Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)->setAttribute\s*\(\s*['"]([^'"]+)['"]\s*,"#)
+            .expect("explicit setAttribute regex");
+    for captures in set_attribute_re.captures_iter(text) {
+        let Some(variable_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(attribute_name) = captures.get(2) else {
+            continue;
+        };
+        let Some(model_fqcn) = model_variables.get(variable_name.as_str()) else {
+            continue;
+        };
+        register_model_attribute_reference(
+            &mut called,
+            model_mutators,
+            model_fqcn,
+            attribute_name.as_str(),
+        );
+    }
+
+    called
+}
+
 fn extract_called_model_relationships_from_text(
     text: &str,
     source_class: &SourceClass,
@@ -1906,6 +2471,26 @@ fn collect_model_variables_from_text(
     variables
 }
 
+fn register_model_attribute_reference(
+    called: &mut BTreeSet<(String, String)>,
+    model_attributes: &BTreeMap<String, BTreeSet<String>>,
+    model_fqcn: &str,
+    attribute_name: &str,
+) {
+    if model_attributes
+        .get(model_fqcn)
+        .is_some_and(|attributes| attributes.contains(attribute_name))
+    {
+        called.insert((model_fqcn.to_string(), attribute_name.to_string()));
+    }
+}
+
+fn starts_with_assignment_operator(value: &str) -> bool {
+    ["=", "+=", "-=", ".=", "*=", "/=", "%=", "??="]
+        .iter()
+        .any(|operator| value.starts_with(operator))
+}
+
 fn register_model_relationship_reference(
     called: &mut BTreeSet<(String, String)>,
     model_relationships: &BTreeMap<String, BTreeSet<String>>,
@@ -2070,17 +2655,73 @@ fn extract_dispatched_jobs(method_body: &str, source_class: &SourceClass) -> BTr
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
     use std::path::PathBuf;
 
     use serde_json::json;
 
-    use super::analyze_controller_reachability;
+    use super::{
+        analyze_controller_reachability, extract_read_model_attributes_from_text,
+        extract_written_model_attributes_from_text,
+    };
     use crate::contracts::AnalysisRequest;
     use crate::model::{
         AnalyzedFile, ControllerMethod, FileFacts, ModelFacts, ModelMethodFact,
         ModelRelationshipFact, ScopeUsageFact,
     };
     use crate::pipeline::PipelineResult;
+    use crate::source_index::parse_source_class;
+
+    #[test]
+    fn explicit_model_attribute_reads_and_writes_are_extracted_conservatively() {
+        let controller_source = r#"<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\User;
+
+final class UserController
+{
+    public function index(): array
+    {
+        $user = new User();
+        $user->display_name = trim($user->display_name);
+
+        return [$user->display_name];
+    }
+}
+"#;
+        let source_class =
+            parse_source_class(controller_source, "app/Http/Controllers/UserController.php")
+                .expect("controller should parse");
+        let model_accessors = BTreeMap::from([(
+            "App\\Models\\User".to_string(),
+            BTreeSet::from(["display_name".to_string(), "secret_name".to_string()]),
+        )]);
+        let model_mutators = BTreeMap::from([(
+            "App\\Models\\User".to_string(),
+            BTreeSet::from(["display_name".to_string(), "secret_name".to_string()]),
+        )]);
+
+        let reads = extract_read_model_attributes_from_text(
+            controller_source,
+            &source_class,
+            &model_accessors,
+            &BTreeMap::new(),
+            None,
+        );
+        let writes = extract_written_model_attributes_from_text(
+            controller_source,
+            &source_class,
+            &model_mutators,
+            None,
+        );
+
+        assert!(reads.contains(&("App\\Models\\User".to_string(), "display_name".to_string())));
+        assert!(!reads.contains(&("App\\Models\\User".to_string(), "secret_name".to_string())));
+        assert!(writes.contains(&("App\\Models\\User".to_string(), "display_name".to_string())));
+        assert!(!writes.contains(&("App\\Models\\User".to_string(), "secret_name".to_string())));
+    }
 
     #[test]
     fn reachable_command_keeps_explicitly_loaded_model_helper_alive() {
@@ -2186,6 +2827,9 @@ class Invoice extends Model
                             relationships: Vec::new(),
                             scopes: Vec::new(),
                             attributes: Vec::new(),
+                            accessors: Vec::new(),
+                            mutators: Vec::new(),
+                            appends: Vec::new(),
                             methods: vec![
                                 ModelMethodFact {
                                     name: "summary".to_string(),
@@ -2198,6 +2842,7 @@ class Invoice extends Model
                                         .to_string(),
                                 },
                             ],
+                            ..ModelFacts::default()
                         }],
                         ..FileFacts::default()
                     },

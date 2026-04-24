@@ -6,9 +6,9 @@ use tree_sitter::Node;
 
 use crate::manifest::FeatureFlags;
 use crate::model::{
-    BroadcastFact, BroadcastParameterFact, ControllerMethod, FileFacts, ModelFacts,
-    ModelMethodFact, ModelRelationshipFact, PolymorphicFact, RequestUsageFact, ResourceUsageFact,
-    ScopeUsageFact,
+    BroadcastFact, BroadcastParameterFact, ControllerMethod, FileFacts, ModelAttributeFact,
+    ModelFacts, ModelMethodFact, ModelRelationshipFact, PolymorphicFact, RequestUsageFact,
+    ResourceUsageFact, ScopeUsageFact,
 };
 use crate::parser::ParsedUnit;
 
@@ -127,6 +127,21 @@ fn process_class(
         } else {
             Vec::new()
         };
+        let accessors = if features.attribute_make {
+            detect_model_accessors(&methods)
+        } else {
+            Vec::new()
+        };
+        let mutators = if features.attribute_make {
+            detect_model_mutators(&methods)
+        } else {
+            Vec::new()
+        };
+        let appends = if features.attribute_make {
+            detect_model_appends(&class_text)
+        } else {
+            Vec::new()
+        };
         let relationships = extract_model_relationships(&methods, namespace, imports);
         let helper_methods = extract_model_helper_methods(&methods, &relationships, &attributes);
 
@@ -155,6 +170,9 @@ fn process_class(
             relationships,
             scopes,
             attributes,
+            accessors,
+            mutators,
+            appends,
             methods: helper_methods,
         });
     }
@@ -638,6 +656,122 @@ fn detect_model_attributes(methods: &[MethodInfo]) -> Vec<String> {
     attributes
 }
 
+fn detect_model_accessors(methods: &[MethodInfo]) -> Vec<ModelAttributeFact> {
+    let legacy_accessor_re =
+        Regex::new(r#"^get([A-Z][A-Za-z0-9_]*)Attribute$"#).expect("legacy accessor regex");
+    let mut accessors = Vec::new();
+
+    for method in methods {
+        if let Some(captures) = legacy_accessor_re.captures(&method.name) {
+            let Some(raw_name) = captures.get(1) else {
+                continue;
+            };
+            accessors.push(ModelAttributeFact {
+                name: normalize_attribute_name(raw_name.as_str()),
+                body_text: method.text.clone(),
+                via: "legacy_accessor".to_string(),
+            });
+            continue;
+        }
+
+        if !method.text.contains("Attribute::make") || !method.text.contains("get:") {
+            continue;
+        }
+
+        accessors.push(ModelAttributeFact {
+            name: normalize_attribute_name(&method.name),
+            body_text: method.text.clone(),
+            via: "attribute_make".to_string(),
+        });
+    }
+
+    dedup_attribute_facts(accessors)
+}
+
+fn detect_model_mutators(methods: &[MethodInfo]) -> Vec<ModelAttributeFact> {
+    let legacy_mutator_re =
+        Regex::new(r#"^set([A-Z][A-Za-z0-9_]*)Attribute$"#).expect("legacy mutator regex");
+    let mut mutators = Vec::new();
+
+    for method in methods {
+        if let Some(captures) = legacy_mutator_re.captures(&method.name) {
+            let Some(raw_name) = captures.get(1) else {
+                continue;
+            };
+            mutators.push(ModelAttributeFact {
+                name: normalize_attribute_name(raw_name.as_str()),
+                body_text: method.text.clone(),
+                via: "legacy_mutator".to_string(),
+            });
+            continue;
+        }
+
+        if !method.text.contains("Attribute::make") || !method.text.contains("set:") {
+            continue;
+        }
+
+        mutators.push(ModelAttributeFact {
+            name: normalize_attribute_name(&method.name),
+            body_text: method.text.clone(),
+            via: "attribute_make".to_string(),
+        });
+    }
+
+    dedup_attribute_facts(mutators)
+}
+
+fn detect_model_appends(class_text: &str) -> Vec<String> {
+    let property_re =
+        Regex::new(r#"(?s)\$(?:this->)?appends\s*=\s*\[([^\]]*)\]"#).expect("appends regex");
+    let mut appends = Vec::new();
+
+    for captures in property_re.captures_iter(class_text) {
+        let Some(group) = captures.get(1) else {
+            continue;
+        };
+        appends.extend(parse_php_string_list(group.as_str()));
+    }
+
+    appends.sort();
+    appends.dedup();
+    appends
+}
+
+fn dedup_attribute_facts(facts: Vec<ModelAttributeFact>) -> Vec<ModelAttributeFact> {
+    let mut deduped = Vec::new();
+    let mut seen = BTreeSet::new();
+
+    for fact in facts {
+        if seen.insert(fact.name.clone()) {
+            deduped.push(fact);
+        }
+    }
+
+    deduped
+}
+
+fn normalize_attribute_name(value: &str) -> String {
+    let mut normalized = String::new();
+
+    for (index, ch) in value.chars().enumerate() {
+        if ch == '_' {
+            normalized.push(ch);
+            continue;
+        }
+
+        if ch.is_ascii_uppercase() {
+            if index > 0 {
+                normalized.push('_');
+            }
+            normalized.push(ch.to_ascii_lowercase());
+        } else {
+            normalized.push(ch);
+        }
+    }
+
+    normalized
+}
+
 fn extract_model_helper_methods(
     methods: &[MethodInfo],
     relationships: &[ModelRelationshipFact],
@@ -1043,8 +1177,55 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        MethodInfo, ModelRelationshipFact, detect_scope_usage, extract_model_helper_methods,
+        MethodInfo, ModelRelationshipFact, detect_model_accessors, detect_model_mutators,
+        detect_scope_usage, extract_model_helper_methods,
     };
+
+    #[test]
+    fn detects_legacy_and_modern_attribute_facts() {
+        let methods = vec![
+            MethodInfo {
+                name: "getDisplayNameAttribute".to_string(),
+                text: "public function getDisplayNameAttribute($value) { return trim($value); }"
+                    .to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 1,
+            },
+            MethodInfo {
+                name: "setDisplayNameAttribute".to_string(),
+                text: "public function setDisplayNameAttribute($value) { $this->attributes['display_name'] = trim($value); }".to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 1,
+            },
+            MethodInfo {
+                name: "secretName".to_string(),
+                text: "protected function secretName(): Attribute { return Attribute::make(get: fn ($value) => strtoupper($value), set: fn ($value) => strtolower($value)); }".to_string(),
+                is_public: false,
+                is_static: false,
+                parameter_count: 0,
+            },
+        ];
+
+        let accessors = detect_model_accessors(&methods);
+        let mutators = detect_model_mutators(&methods);
+
+        assert_eq!(
+            accessors
+                .iter()
+                .map(|attribute| attribute.name.clone())
+                .collect::<Vec<_>>(),
+            vec!["display_name".to_string(), "secret_name".to_string()]
+        );
+        assert_eq!(
+            mutators
+                .iter()
+                .map(|attribute| attribute.name.clone())
+                .collect::<Vec<_>>(),
+            vec!["display_name".to_string(), "secret_name".to_string()]
+        );
+    }
 
     #[test]
     fn model_helper_candidates_skip_known_framework_hooks() {

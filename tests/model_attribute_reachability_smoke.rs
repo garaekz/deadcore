@@ -69,6 +69,24 @@ fn reports_unused_model_accessor_and_mutator() {
     );
 
     assert!(
+        !findings.iter().any(|finding| {
+            finding["symbol"] == "App\\Models\\User::display_name"
+                && finding["category"] == "unused_model_accessor"
+        }),
+        "did not expect reachable model accessor to be reported unused, payload: {}",
+        payload
+    );
+
+    assert!(
+        !findings.iter().any(|finding| {
+            finding["symbol"] == "App\\Models\\User::display_name"
+                && finding["category"] == "unused_model_mutator"
+        }),
+        "did not expect reachable model mutator to be reported unused, payload: {}",
+        payload
+    );
+
+    assert!(
         findings.iter().any(|finding| {
             finding["symbol"] == "App\\Models\\User::secret_name"
                 && finding["category"] == "unused_model_accessor"
