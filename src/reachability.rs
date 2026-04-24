@@ -6,10 +6,11 @@ use crate::contracts::{AnalysisRequest, Entrypoint, RemovalChangeSet, RemovalPla
 use crate::deadcode_model::{
     CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, FINDING_CATEGORY_UNUSED_COMMAND_CLASS,
     FINDING_CATEGORY_UNUSED_CONTROLLER_CLASS, FINDING_CATEGORY_UNUSED_CONTROLLER_METHOD,
-    FINDING_CATEGORY_UNUSED_FORM_REQUEST, FINDING_CATEGORY_UNUSED_LISTENER_CLASS,
-    FINDING_CATEGORY_UNUSED_RESOURCE_CLASS, FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding,
-    SYMBOL_KIND_COMMAND_CLASS, SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD,
-    SYMBOL_KIND_FORM_REQUEST_CLASS, SYMBOL_KIND_LISTENER_CLASS, SYMBOL_KIND_RESOURCE_CLASS,
+    FINDING_CATEGORY_UNUSED_FORM_REQUEST, FINDING_CATEGORY_UNUSED_JOB_CLASS,
+    FINDING_CATEGORY_UNUSED_LISTENER_CLASS, FINDING_CATEGORY_UNUSED_RESOURCE_CLASS,
+    FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding, SYMBOL_KIND_COMMAND_CLASS,
+    SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD, SYMBOL_KIND_FORM_REQUEST_CLASS,
+    SYMBOL_KIND_JOB_CLASS, SYMBOL_KIND_LISTENER_CLASS, SYMBOL_KIND_RESOURCE_CLASS,
     SYMBOL_KIND_SUBSCRIBER_CLASS, SymbolRecord,
 };
 use crate::model::{AnalyzedFile, ControllerMethod};
@@ -80,6 +81,14 @@ pub fn analyze_controller_reachability(
         });
     }
 
+    for job in &request.runtime.jobs {
+        entrypoints.push(Entrypoint {
+            kind: "runtime_job".to_string(),
+            symbol: job.fqcn.clone(),
+            source: job.fqcn.clone(),
+        });
+    }
+
     while let Some(symbol) = worklist.pop_front() {
         let Some(callees) = call_graph.get(&symbol) else {
             continue;
@@ -112,6 +121,12 @@ pub fn analyze_controller_reachability(
         .iter()
         .map(|subscriber| subscriber.fqcn.clone())
         .collect::<BTreeSet<_>>();
+    let reachable_jobs = collect_reachable_jobs(
+        result,
+        &source_index,
+        &reachable_actions,
+        &request.runtime.jobs,
+    );
     let mut symbols = Vec::new();
     let mut findings = Vec::new();
     let mut change_sets = Vec::new();
@@ -345,6 +360,50 @@ pub fn analyze_controller_reachability(
     }
 
     for class in source_index.classes.values() {
+        if !is_job_class(class, &reachable_jobs) {
+            continue;
+        }
+
+        let line_range = find_class_line_range(class);
+        let (start_line, end_line) = line_range
+            .map(|(start, end)| (Some(start), Some(end)))
+            .unwrap_or((None, None));
+        let reachable_from_runtime = reachable_jobs.contains(&class.fqcn);
+
+        symbols.push(SymbolRecord {
+            kind: SYMBOL_KIND_JOB_CLASS.to_string(),
+            symbol: class.fqcn.clone(),
+            file: class.relative_path.clone(),
+            reachable_from_runtime,
+            start_line,
+            end_line,
+        });
+
+        if reachable_from_runtime {
+            continue;
+        }
+
+        let removal_range = explicit_job_removal_range(class);
+        findings.push(Finding {
+            symbol: class.fqcn.clone(),
+            category: FINDING_CATEGORY_UNUSED_JOB_CLASS.to_string(),
+            confidence: job_class_confidence(class, removal_range).to_string(),
+            file: class.relative_path.clone(),
+            start_line,
+            end_line,
+        });
+
+        if let Some((start_line, end_line)) = removal_range {
+            change_sets.push(RemovalChangeSet {
+                file: class.relative_path.clone(),
+                symbol: class.fqcn.clone(),
+                start_line,
+                end_line,
+            });
+        }
+    }
+
+    for class in source_index.classes.values() {
         if !is_listener_class(class, &reachable_listeners) {
             continue;
         }
@@ -490,6 +549,33 @@ fn collect_reachable_resources(
     }
 
     reachable_resources
+}
+
+fn collect_reachable_jobs(
+    result: &PipelineResult,
+    source_index: &SourceIndex,
+    reachable_actions: &BTreeSet<String>,
+    runtime_jobs: &[crate::contracts::RuntimeJob],
+) -> BTreeSet<String> {
+    let mut reachable_jobs = runtime_jobs
+        .iter()
+        .map(|job| job.fqcn.clone())
+        .collect::<BTreeSet<_>>();
+
+    for (_, controller) in result.controller_methods() {
+        let symbol = format!("{}::{}", controller.fqcn, controller.method_name);
+        if !reachable_actions.contains(&symbol) {
+            continue;
+        }
+
+        let Some(source_class) = source_index.get(&controller.fqcn) else {
+            continue;
+        };
+
+        reachable_jobs.extend(extract_dispatched_jobs(&controller.body_text, source_class));
+    }
+
+    reachable_jobs
 }
 
 fn build_controller_call_graph(
@@ -705,6 +791,30 @@ fn explicit_subscriber_removal_range(class: &SourceClass) -> Option<(usize, usiz
     find_class_line_range(class)
 }
 
+fn job_class_confidence(
+    class: &SourceClass,
+    removal_range: Option<(usize, usize)>,
+) -> &'static str {
+    if removal_range.is_some()
+        && class.relative_path.starts_with("app/Jobs/")
+        && class_declaration_count(&class.source_text) == 1
+    {
+        CONFIDENCE_HIGH
+    } else {
+        CONFIDENCE_MEDIUM
+    }
+}
+
+fn explicit_job_removal_range(class: &SourceClass) -> Option<(usize, usize)> {
+    if !class.relative_path.starts_with("app/Jobs/")
+        || class_declaration_count(&class.source_text) != 1
+    {
+        return None;
+    }
+
+    find_class_line_range(class)
+}
+
 fn class_declaration_count(source: &str) -> usize {
     Regex::new(r#"(?m)^\s*(?:final\s+|abstract\s+)?class\s+[A-Za-z_][A-Za-z0-9_]*\b"#)
         .expect("class declaration count regex")
@@ -730,6 +840,14 @@ fn is_subscriber_class(class: &SourceClass, reachable_subscribers: &BTreeSet<Str
     class.relative_path.starts_with("app/Listeners/")
         && has_method(&class.source_text, "subscribe")
         && !has_method(&class.source_text, "handle")
+}
+
+fn is_job_class(class: &SourceClass, reachable_jobs: &BTreeSet<String>) -> bool {
+    if reachable_jobs.contains(&class.fqcn) {
+        return true;
+    }
+
+    class.relative_path.starts_with("app/Jobs/") && has_method(&class.source_text, "handle")
 }
 
 fn has_method(source: &str, method_name: &str) -> bool {
@@ -862,4 +980,45 @@ fn register_controller_callee(
     {
         callees.insert(format!("{controller_fqcn}::{method_name}"));
     }
+}
+
+fn extract_dispatched_jobs(method_body: &str, source_class: &SourceClass) -> BTreeSet<String> {
+    let mut jobs = BTreeSet::new();
+
+    let static_dispatch_re = Regex::new(r#"([A-Za-z_\\][A-Za-z0-9_\\]*)::dispatch\s*\("#)
+        .expect("static dispatch regex");
+    for captures in static_dispatch_re.captures_iter(method_body) {
+        let Some(class_name) = captures.get(1) else {
+            continue;
+        };
+        if matches!(class_name.as_str(), "self" | "static" | "Bus") {
+            continue;
+        }
+        let resolved = source_class.resolve_name(class_name.as_str());
+        jobs.insert(resolved);
+    }
+
+    let dispatch_new_re =
+        Regex::new(r#"(?m)(?:^|[^:])dispatch\s*\(\s*new\s+([A-Za-z_\\][A-Za-z0-9_\\]*)\b"#)
+            .expect("dispatch new regex");
+    for captures in dispatch_new_re.captures_iter(method_body) {
+        let Some(class_name) = captures.get(1) else {
+            continue;
+        };
+        let resolved = source_class.resolve_name(class_name.as_str());
+        jobs.insert(resolved);
+    }
+
+    let bus_dispatch_re =
+        Regex::new(r#"Bus::dispatch\s*\(\s*new\s+([A-Za-z_\\][A-Za-z0-9_\\]*)\b"#)
+            .expect("bus dispatch regex");
+    for captures in bus_dispatch_re.captures_iter(method_body) {
+        let Some(class_name) = captures.get(1) else {
+            continue;
+        };
+        let resolved = source_class.resolve_name(class_name.as_str());
+        jobs.insert(resolved);
+    }
+
+    jobs
 }

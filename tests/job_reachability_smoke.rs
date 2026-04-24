@@ -47,6 +47,22 @@ fn reports_unused_job_class() {
     let findings = payload["findings"]
         .as_array()
         .expect("findings should be an array");
+    let entrypoints = payload["entrypoints"]
+        .as_array()
+        .expect("entrypoints should be an array");
+    let removal_change_sets = payload["removalPlan"]["changeSets"]
+        .as_array()
+        .expect("removal plan should contain change sets");
+
+    assert!(
+        entrypoints.iter().any(|entrypoint| {
+            entrypoint["kind"] == "runtime_job"
+                && entrypoint["symbol"] == "App\\Jobs\\ReachableOrderJob"
+                && entrypoint["source"] == "App\\Jobs\\ReachableOrderJob"
+        }),
+        "expected runtime job entrypoint, payload: {}",
+        payload
+    );
 
     assert!(
         symbols.iter().any(|symbol| {
@@ -73,6 +89,17 @@ fn reports_unused_job_class() {
             .iter()
             .any(|finding| { finding["symbol"] == "App\\Jobs\\ReachableOrderJob" }),
         "reachable job class should not be flagged, payload: {}",
+        payload
+    );
+
+    assert!(
+        removal_change_sets.iter().any(|change_set| {
+            change_set["symbol"] == "App\\Jobs\\UnusedAuditJob"
+                && change_set["file"] == "app/Jobs/UnusedAuditJob.php"
+                && change_set["start_line"].is_number()
+                && change_set["end_line"].is_number()
+        }),
+        "expected explicit removal plan for unused job class, payload: {}",
         payload
     );
 }
