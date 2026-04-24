@@ -8,10 +8,11 @@ final class InvoiceController
 {
     public function index(): array
     {
-        $invoice = Invoice::query()->with('customer')->firstOrFail();
+        $invoice = Invoice::query()->with(['customer'])->firstOrFail();
+        $customer = $invoice->customer()->first();
 
-        $invoice->customer?->name;
+        $customer?->name;
 
-        return [$invoice];
+        return [$invoice, $customer];
     }
 }
