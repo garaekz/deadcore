@@ -104,6 +104,8 @@ pub struct RuntimeSnapshot {
     #[serde(default)]
     pub routes: Vec<RuntimeRoute>,
     #[serde(default)]
+    pub commands: Vec<RuntimeCommand>,
+    #[serde(default)]
     pub packages: Vec<RuntimePackage>,
 }
 
@@ -147,6 +149,14 @@ pub struct RuntimeRoute {
 pub struct RuntimePackage {
     pub name: String,
     pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeCommand {
+    pub signature: String,
+    pub fqcn: String,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -580,6 +590,32 @@ fn validate_request_business_rules(request: &AnalysisRequest) -> Result<()> {
             bail!(
                 "runtime.routes contains duplicate routeId \"{}\"",
                 route.route_id
+            );
+        }
+    }
+
+    let mut seen_command_signatures = BTreeSet::new();
+    let mut seen_command_fqcns = BTreeSet::new();
+    for command in &request.runtime.commands {
+        if command.signature.trim().is_empty() {
+            bail!("runtime.commands contains an empty signature");
+        }
+        if command.fqcn.trim().is_empty() {
+            bail!(
+                "runtime.commands contains an empty fqcn for signature \"{}\"",
+                command.signature
+            );
+        }
+        if !seen_command_signatures.insert(command.signature.clone()) {
+            bail!(
+                "runtime.commands contains duplicate signature \"{}\"",
+                command.signature
+            );
+        }
+        if !seen_command_fqcns.insert(command.fqcn.clone()) {
+            bail!(
+                "runtime.commands contains duplicate fqcn \"{}\"",
+                command.fqcn
             );
         }
     }

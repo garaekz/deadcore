@@ -62,6 +62,7 @@ fn reports_unused_command_class() {
         findings.iter().any(|finding| {
             finding["symbol"] == "App\\Console\\Commands\\UnusedAuditCommand"
                 && finding["category"] == "unused_command_class"
+                && finding["confidence"] == "high"
         }),
         "expected unused command class finding, payload: {}",
         payload
@@ -72,6 +73,20 @@ fn reports_unused_command_class() {
             finding["symbol"] == "App\\Console\\Commands\\ReachableMaintenanceCommand"
         }),
         "reachable command class should not be flagged, payload: {}",
+        payload
+    );
+
+    let removal_change_sets = payload["removalPlan"]["changeSets"]
+        .as_array()
+        .expect("removal plan should contain change sets");
+    assert!(
+        removal_change_sets.iter().any(|change_set| {
+            change_set["symbol"] == "App\\Console\\Commands\\UnusedAuditCommand"
+                && change_set["file"] == "app/Console/Commands/UnusedAuditCommand.php"
+                && change_set["start_line"].is_number()
+                && change_set["end_line"].is_number()
+        }),
+        "expected explicit removal plan for unused command class, payload: {}",
         payload
     );
 }

@@ -4,15 +4,16 @@ use regex::Regex;
 
 use crate::contracts::{AnalysisRequest, Entrypoint, RemovalChangeSet, RemovalPlan};
 use crate::deadcode_model::{
-    Finding, SymbolRecord, CONFIDENCE_HIGH, FINDING_CATEGORY_UNUSED_CONTROLLER_CLASS,
-    FINDING_CATEGORY_UNUSED_CONTROLLER_METHOD, FINDING_CATEGORY_UNUSED_FORM_REQUEST,
-    FINDING_CATEGORY_UNUSED_RESOURCE_CLASS, SYMBOL_KIND_CONTROLLER_CLASS,
-    SYMBOL_KIND_CONTROLLER_METHOD, SYMBOL_KIND_FORM_REQUEST_CLASS, SYMBOL_KIND_RESOURCE_CLASS,
+    CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, FINDING_CATEGORY_UNUSED_COMMAND_CLASS,
+    FINDING_CATEGORY_UNUSED_CONTROLLER_CLASS, FINDING_CATEGORY_UNUSED_CONTROLLER_METHOD,
+    FINDING_CATEGORY_UNUSED_FORM_REQUEST, FINDING_CATEGORY_UNUSED_RESOURCE_CLASS, Finding,
+    SYMBOL_KIND_COMMAND_CLASS, SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD,
+    SYMBOL_KIND_FORM_REQUEST_CLASS, SYMBOL_KIND_RESOURCE_CLASS, SymbolRecord,
 };
 use crate::model::{AnalyzedFile, ControllerMethod};
 use crate::parser::line_range_for_span;
 use crate::pipeline::PipelineResult;
-use crate::source_index::{extract_balanced_region, SourceClass, SourceIndex};
+use crate::source_index::{SourceClass, SourceIndex, extract_balanced_region};
 
 pub struct ControllerReachabilityReport {
     pub entrypoints: Vec<Entrypoint>,
@@ -53,6 +54,14 @@ pub fn analyze_controller_reachability(
         }
     }
 
+    for command in &request.runtime.commands {
+        entrypoints.push(Entrypoint {
+            kind: "runtime_command".to_string(),
+            symbol: command.fqcn.clone(),
+            source: command.signature.clone(),
+        });
+    }
+
     while let Some(symbol) = worklist.pop_front() {
         let Some(callees) = call_graph.get(&symbol) else {
             continue;
@@ -67,6 +76,12 @@ pub fn analyze_controller_reachability(
     let reachable_form_requests =
         collect_reachable_form_requests(result, &source_index, &reachable_actions);
     let reachable_resources = collect_reachable_resources(result, &reachable_actions);
+    let reachable_commands = request
+        .runtime
+        .commands
+        .iter()
+        .map(|command| command.fqcn.clone())
+        .collect::<BTreeSet<_>>();
     let mut symbols = Vec::new();
     let mut findings = Vec::new();
     let mut change_sets = Vec::new();
@@ -171,6 +186,48 @@ pub fn analyze_controller_reachability(
                 .iter()
                 .any(|fqcn| change_set.symbol.starts_with(&format!("{fqcn}::")))
         });
+    }
+
+    for class in source_index.classes.values() {
+        if !is_command_class(class, &source_index, &mut BTreeSet::new()) {
+            continue;
+        }
+
+        let (start_line, end_line) = find_class_line_range(class)
+            .map(|(start, end)| (Some(start), Some(end)))
+            .unwrap_or((None, None));
+        let reachable_from_runtime = reachable_commands.contains(&class.fqcn);
+
+        symbols.push(SymbolRecord {
+            kind: SYMBOL_KIND_COMMAND_CLASS.to_string(),
+            symbol: class.fqcn.clone(),
+            file: class.relative_path.clone(),
+            reachable_from_runtime,
+            start_line,
+            end_line,
+        });
+
+        if reachable_from_runtime {
+            continue;
+        }
+
+        findings.push(Finding {
+            symbol: class.fqcn.clone(),
+            category: FINDING_CATEGORY_UNUSED_COMMAND_CLASS.to_string(),
+            confidence: command_class_confidence(class, start_line, end_line).to_string(),
+            file: class.relative_path.clone(),
+            start_line,
+            end_line,
+        });
+
+        if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
+            change_sets.push(RemovalChangeSet {
+                file: class.relative_path.clone(),
+                symbol: class.fqcn.clone(),
+                start_line,
+                end_line,
+            });
+        }
     }
 
     for class in source_index.classes.values() {
@@ -437,6 +494,56 @@ fn is_resource_fqcn(
     };
 
     is_resource_fqcn(extends, source_index, visited)
+}
+
+fn is_command_class(
+    class: &SourceClass,
+    source_index: &SourceIndex,
+    visited: &mut BTreeSet<String>,
+) -> bool {
+    is_command_fqcn(&class.fqcn, source_index, visited)
+}
+
+fn is_command_fqcn(fqcn: &str, source_index: &SourceIndex, visited: &mut BTreeSet<String>) -> bool {
+    if fqcn == "Illuminate\\Console\\Command" {
+        return true;
+    }
+
+    if !visited.insert(fqcn.to_string()) {
+        return false;
+    }
+
+    let Some(class) = source_index.get(fqcn) else {
+        return false;
+    };
+    let Some(extends) = &class.extends else {
+        return false;
+    };
+
+    is_command_fqcn(extends, source_index, visited)
+}
+
+fn command_class_confidence(
+    class: &SourceClass,
+    start_line: Option<usize>,
+    end_line: Option<usize>,
+) -> &'static str {
+    if start_line.is_some()
+        && end_line.is_some()
+        && class.relative_path.starts_with("app/Console/Commands/")
+        && class_declaration_count(&class.source_text) == 1
+    {
+        CONFIDENCE_HIGH
+    } else {
+        CONFIDENCE_MEDIUM
+    }
+}
+
+fn class_declaration_count(source: &str) -> usize {
+    Regex::new(r#"(?m)^\s*(?:final\s+|abstract\s+)?class\s+[A-Za-z_][A-Za-z0-9_]*\b"#)
+        .expect("class declaration count regex")
+        .find_iter(source)
+        .count()
 }
 
 fn collect_controller_callees(
