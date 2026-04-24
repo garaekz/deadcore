@@ -110,6 +110,8 @@ pub struct RuntimeSnapshot {
     #[serde(default)]
     pub subscribers: Vec<RuntimeSubscriber>,
     #[serde(default)]
+    pub jobs: Vec<RuntimeJob>,
+    #[serde(default)]
     pub packages: Vec<RuntimePackage>,
 }
 
@@ -175,6 +177,12 @@ pub struct RuntimeListener {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RuntimeSubscriber {
+    pub fqcn: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeJob {
     pub fqcn: String,
 }
 

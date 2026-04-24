@@ -1,0 +1,55 @@
+{
+  "contractVersion": "deadcode.analysis.v1",
+  "requestId": "req-deadcode-job-reachability",
+  "runtimeFingerprint": "fp-deadcode-job-reachability",
+  "manifest": {
+    "project": {
+      "root": "C:\\Users\\garae\\.config\\superpowers\\worktrees\\laravel-dead-code-detector\\execute-phase1\\repos\\deadcore\\test\\fixtures\\integration\\deadcode-job-reachability",
+      "composer": "composer.json"
+    },
+    "scan": {
+      "targets": ["app", "routes"],
+      "globs": ["**/*.php"]
+    },
+    "features": {
+      "http_status": false,
+      "request_usage": false,
+      "resource_usage": false
+    }
+  },
+  "runtime": {
+    "app": {
+      "basePath": "C:\\Users\\garae\\.config\\superpowers\\worktrees\\laravel-dead-code-detector\\execute-phase1\\repos\\deadcore\\test\\fixtures\\integration\\deadcode-job-reachability",
+      "laravelVersion": "12.0.0",
+      "phpVersion": "8.3.0",
+      "appEnv": "testing"
+    },
+    "routes": [
+      {
+        "routeId": "job.reachable.dispatch",
+        "methods": ["POST"],
+        "uri": "jobs/reachable",
+        "domain": null,
+        "name": "jobs.reachable.dispatch",
+        "prefix": null,
+        "middleware": ["api"],
+        "where": {},
+        "defaults": {},
+        "bindings": [],
+        "action": {
+          "kind": "controller_method",
+          "fqcn": "App\\Http\\Controllers\\ReachableJobController",
+          "method": "store"
+        }
+      }
+    ],
+    "commands": [],
+    "listeners": [],
+    "subscribers": [],
+    "jobs": [
+      {
+        "fqcn": "App\\Jobs\\ReachableOrderJob"
+      }
+    ]
+  }
+}
