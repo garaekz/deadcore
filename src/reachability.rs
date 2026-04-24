@@ -176,6 +176,7 @@ pub fn analyze_controller_reachability(
         result,
         &source_index,
         &reachable_actions,
+        &reachable_model_methods,
         &reachable_commands,
         &reachable_listeners,
         &reachable_subscribers,
@@ -186,6 +187,7 @@ pub fn analyze_controller_reachability(
         result,
         &source_index,
         &reachable_actions,
+        &reachable_model_methods,
         &reachable_commands,
         &reachable_listeners,
         &reachable_subscribers,
@@ -935,6 +937,7 @@ fn collect_reachable_model_accessors(
     result: &PipelineResult,
     source_index: &SourceIndex,
     reachable_actions: &BTreeSet<String>,
+    reachable_model_methods: &BTreeSet<String>,
     reachable_commands: &BTreeSet<String>,
     reachable_listeners: &BTreeSet<String>,
     reachable_subscribers: &BTreeSet<String>,
@@ -1023,6 +1026,14 @@ fn collect_reachable_model_accessors(
         &model_accessors,
         &model_appends,
     );
+    collect_reachable_model_accessors_from_model_methods(
+        &mut reachable_model_accessors,
+        result,
+        source_index,
+        reachable_model_methods,
+        &model_accessors,
+        &model_appends,
+    );
 
     reachable_model_accessors
 }
@@ -1031,6 +1042,7 @@ fn collect_reachable_model_mutators(
     result: &PipelineResult,
     source_index: &SourceIndex,
     reachable_actions: &BTreeSet<String>,
+    reachable_model_methods: &BTreeSet<String>,
     reachable_commands: &BTreeSet<String>,
     reachable_listeners: &BTreeSet<String>,
     reachable_subscribers: &BTreeSet<String>,
@@ -1105,6 +1117,13 @@ fn collect_reachable_model_mutators(
         &mut reachable_model_mutators,
         source_index,
         reachable_policies,
+        &model_mutators,
+    );
+    collect_reachable_model_mutators_from_model_methods(
+        &mut reachable_model_mutators,
+        result,
+        source_index,
+        reachable_model_methods,
         &model_mutators,
     );
 
@@ -1334,6 +1353,39 @@ fn collect_reachable_model_accessors_from_policies(
     }
 }
 
+fn collect_reachable_model_accessors_from_model_methods(
+    reachable_model_accessors: &mut BTreeSet<String>,
+    result: &PipelineResult,
+    source_index: &SourceIndex,
+    reachable_model_methods: &BTreeSet<String>,
+    model_accessors: &BTreeMap<String, BTreeSet<String>>,
+    model_appends: &BTreeMap<String, BTreeSet<String>>,
+) {
+    for file in &result.files {
+        for model in &file.facts.models {
+            let Some(source_class) = source_index.get(&model.fqcn) else {
+                continue;
+            };
+
+            for method in &model.methods {
+                let symbol = format!("{}::{}", model.fqcn, method.name);
+                if !reachable_model_methods.contains(&symbol) {
+                    continue;
+                }
+
+                collect_explicitly_read_model_attributes_from_text(
+                    reachable_model_accessors,
+                    &method.body_text,
+                    source_class,
+                    model_accessors,
+                    model_appends,
+                    Some(&model.fqcn),
+                );
+            }
+        }
+    }
+}
+
 fn collect_reachable_model_mutators_from_runtime_roots(
     reachable_model_mutators: &mut BTreeSet<String>,
     source_index: &SourceIndex,
@@ -1382,6 +1434,37 @@ fn collect_reachable_model_mutators_from_policies(
                 model_mutators,
                 None,
             );
+        }
+    }
+}
+
+fn collect_reachable_model_mutators_from_model_methods(
+    reachable_model_mutators: &mut BTreeSet<String>,
+    result: &PipelineResult,
+    source_index: &SourceIndex,
+    reachable_model_methods: &BTreeSet<String>,
+    model_mutators: &BTreeMap<String, BTreeSet<String>>,
+) {
+    for file in &result.files {
+        for model in &file.facts.models {
+            let Some(source_class) = source_index.get(&model.fqcn) else {
+                continue;
+            };
+
+            for method in &model.methods {
+                let symbol = format!("{}::{}", model.fqcn, method.name);
+                if !reachable_model_methods.contains(&symbol) {
+                    continue;
+                }
+
+                collect_explicitly_written_model_attributes_from_text(
+                    reachable_model_mutators,
+                    &method.body_text,
+                    source_class,
+                    model_mutators,
+                    Some(&model.fqcn),
+                );
+            }
         }
     }
 }
@@ -2281,6 +2364,86 @@ fn extract_written_model_attributes_from_text(
         );
     }
 
+    let instance_bulk_write_re =
+        Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)->(fill|forceFill|update)\s*\("#)
+            .expect("instance bulk write regex");
+    for captures in instance_bulk_write_re.captures_iter(text) {
+        let Some(variable_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(full_match) = captures.get(0) else {
+            continue;
+        };
+        let Some(model_fqcn) = model_variables.get(variable_name.as_str()) else {
+            continue;
+        };
+        let args_start = full_match.end() - 1;
+        let Some((argument_text, _, _)) = extract_balanced_region(&text[args_start..], '(', ')')
+        else {
+            continue;
+        };
+        register_model_attributes_from_argument_arrays(
+            &mut called,
+            model_mutators,
+            model_fqcn,
+            &argument_text,
+        );
+    }
+
+    let static_bulk_write_re = Regex::new(
+        r#"([A-Z][A-Za-z0-9_\\]*)::(create|forceCreate|firstOrCreate|firstOrNew|updateOrCreate)\s*\("#,
+    )
+    .expect("static bulk write regex");
+    for captures in static_bulk_write_re.captures_iter(text) {
+        let Some(class_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(full_match) = captures.get(0) else {
+            continue;
+        };
+        let model_fqcn = source_class.resolve_name(class_name.as_str());
+        if !model_mutators.contains_key(&model_fqcn) {
+            continue;
+        }
+        let args_start = full_match.end() - 1;
+        let Some((argument_text, _, _)) = extract_balanced_region(&text[args_start..], '(', ')')
+        else {
+            continue;
+        };
+        register_model_attributes_from_argument_arrays(
+            &mut called,
+            model_mutators,
+            &model_fqcn,
+            &argument_text,
+        );
+    }
+
+    let constructor_hydration_re =
+        Regex::new(r#"new\s+([A-Z][A-Za-z0-9_\\]*)\s*\("#).expect("constructor hydration regex");
+    for captures in constructor_hydration_re.captures_iter(text) {
+        let Some(class_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(full_match) = captures.get(0) else {
+            continue;
+        };
+        let model_fqcn = source_class.resolve_name(class_name.as_str());
+        if !model_mutators.contains_key(&model_fqcn) {
+            continue;
+        }
+        let args_start = full_match.end() - 1;
+        let Some((argument_text, _, _)) = extract_balanced_region(&text[args_start..], '(', ')')
+        else {
+            continue;
+        };
+        register_model_attributes_from_argument_arrays(
+            &mut called,
+            model_mutators,
+            &model_fqcn,
+            &argument_text,
+        );
+    }
+
     called
 }
 
@@ -2483,6 +2646,38 @@ fn register_model_attribute_reference(
     {
         called.insert((model_fqcn.to_string(), attribute_name.to_string()));
     }
+}
+
+fn register_model_attributes_from_argument_arrays(
+    called: &mut BTreeSet<(String, String)>,
+    model_attributes: &BTreeMap<String, BTreeSet<String>>,
+    model_fqcn: &str,
+    argument_text: &str,
+) {
+    for argument in split_top_level(argument_text, ',') {
+        for attribute_name in extract_php_array_attribute_keys(&argument) {
+            register_model_attribute_reference(called, model_attributes, model_fqcn, &attribute_name);
+        }
+    }
+}
+
+fn extract_php_array_attribute_keys(argument: &str) -> BTreeSet<String> {
+    let Some((inner, _, _)) = extract_balanced_region(argument.trim(), '[', ']') else {
+        return BTreeSet::new();
+    };
+    let mut attributes = BTreeSet::new();
+
+    for entry in split_top_level(&inner, ',') {
+        let Some((key, _)) = split_top_level_key_value(&entry) else {
+            continue;
+        };
+        let Some(attribute_name) = strip_php_string(&key) else {
+            continue;
+        };
+        attributes.insert(attribute_name);
+    }
+
+    attributes
 }
 
 fn starts_with_assignment_operator(value: &str) -> bool {
@@ -2721,6 +2916,216 @@ final class UserController
         assert!(!reads.contains(&("App\\Models\\User".to_string(), "secret_name".to_string())));
         assert!(writes.contains(&("App\\Models\\User".to_string(), "display_name".to_string())));
         assert!(!writes.contains(&("App\\Models\\User".to_string(), "secret_name".to_string())));
+    }
+
+    #[test]
+    fn bulk_model_mutator_write_paths_are_extracted_conservatively() {
+        let controller_source = r#"<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\User;
+
+final class UserController
+{
+    public function store(): void
+    {
+        $user = new User(['display_name' => 'Ada']);
+        $user->fill(['display_name' => 'Grace']);
+        $user->update(['display_name' => 'Linus']);
+        User::create(['display_name' => 'Margaret']);
+        User::updateOrCreate(['email' => 'ada@example.com'], ['display_name' => 'Ada']);
+    }
+}
+"#;
+        let source_class =
+            parse_source_class(controller_source, "app/Http/Controllers/UserController.php")
+                .expect("controller should parse");
+        let model_mutators = BTreeMap::from([(
+            "App\\Models\\User".to_string(),
+            BTreeSet::from(["display_name".to_string(), "secret_name".to_string()]),
+        )]);
+
+        let writes = extract_written_model_attributes_from_text(
+            controller_source,
+            &source_class,
+            &model_mutators,
+            None,
+        );
+
+        assert!(writes.contains(&("App\\Models\\User".to_string(), "display_name".to_string())));
+        assert!(!writes.contains(&("App\\Models\\User".to_string(), "secret_name".to_string())));
+    }
+
+    #[test]
+    fn reachable_model_method_keeps_explicit_accessor_and_mutator_alive() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let request: AnalysisRequest = serde_json::from_value(json!({
+            "contractVersion": "deadcode.analysis.v1",
+            "requestId": "req-model-attribute-method-propagation",
+            "runtimeFingerprint": "fp-model-attribute-method-propagation",
+            "manifest": {
+                "project": {
+                    "root": root,
+                    "composer": "composer.json"
+                },
+                "scan": {
+                    "targets": ["app"],
+                    "globs": ["**/*.php"]
+                },
+                "features": {
+                    "http_status": true,
+                    "request_usage": false,
+                    "resource_usage": false,
+                    "attribute_make": true
+                }
+            },
+            "runtime": {
+                "app": {
+                    "basePath": env!("CARGO_MANIFEST_DIR"),
+                    "laravelVersion": "12.0.0",
+                    "phpVersion": "8.3.0",
+                    "appEnv": "testing"
+                },
+                "routes": [
+                    {
+                        "routeId": "users.show",
+                        "methods": ["GET"],
+                        "uri": "users/{user}",
+                        "domain": null,
+                        "name": "users.show",
+                        "prefix": null,
+                        "middleware": [],
+                        "where": {},
+                        "defaults": {},
+                        "bindings": [],
+                        "action": {
+                            "kind": "controller_method",
+                            "fqcn": "App\\Http\\Controllers\\UserController",
+                            "method": "show"
+                        }
+                    }
+                ]
+            }
+        }))
+        .expect("request should deserialize");
+        let controller_source = r#"<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\User;
+
+final class UserController
+{
+    public function show(User $user): array
+    {
+        return [$user->present()];
+    }
+}
+"#;
+        let model_source = r#"<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class User extends Model
+{
+    public function present(): array
+    {
+        $this->display_name = trim($this->display_name);
+
+        return [$this->display_name];
+    }
+
+    public function getDisplayNameAttribute($value)
+    {
+        return trim($value);
+    }
+
+    public function setDisplayNameAttribute($value)
+    {
+        $this->attributes['display_name'] = trim($value);
+    }
+}
+"#;
+        let result = PipelineResult {
+            files: vec![
+                AnalyzedFile {
+                    path: root.join("app/Http/Controllers/UserController.php"),
+                    relative_path: "app/Http/Controllers/UserController.php".to_string(),
+                    source_text: controller_source.to_string(),
+                    facts: FileFacts {
+                        controllers: vec![ControllerMethod {
+                            class_name: "UserController".to_string(),
+                            fqcn: "App\\Http\\Controllers\\UserController".to_string(),
+                            method_name: "show".to_string(),
+                            body_text: "public function show(User $user): array\n    {\n        return [$user->present()];\n    }".to_string(),
+                            ..ControllerMethod::default()
+                        }],
+                        ..FileFacts::default()
+                    },
+                },
+                AnalyzedFile {
+                    path: root.join("app/Models/User.php"),
+                    relative_path: "app/Models/User.php".to_string(),
+                    source_text: model_source.to_string(),
+                    facts: FileFacts {
+                        models: vec![ModelFacts {
+                            class_name: "User".to_string(),
+                            fqcn: "App\\Models\\User".to_string(),
+                            accessors: vec![crate::model::ModelAttributeFact {
+                                name: "display_name".to_string(),
+                                body_text: "public function getDisplayNameAttribute($value)\n    {\n        return trim($value);\n    }".to_string(),
+                                via: "legacy_accessor".to_string(),
+                            }],
+                            mutators: vec![crate::model::ModelAttributeFact {
+                                name: "display_name".to_string(),
+                                body_text: "public function setDisplayNameAttribute($value)\n    {\n        $this->attributes['display_name'] = trim($value);\n    }".to_string(),
+                                via: "legacy_mutator".to_string(),
+                            }],
+                            methods: vec![ModelMethodFact {
+                                name: "present".to_string(),
+                                body_text: "public function present(): array\n    {\n        $this->display_name = trim($this->display_name);\n\n        return [$this->display_name];\n    }".to_string(),
+                            }],
+                            ..ModelFacts::default()
+                        }],
+                        ..FileFacts::default()
+                    },
+                },
+            ],
+            route_bindings: Vec::new(),
+            partial: false,
+            duration_ms: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+        };
+
+        let report = analyze_controller_reachability(&request, &result);
+
+        assert!(report.symbols.iter().any(|symbol| {
+            symbol.kind == "model_method"
+                && symbol.symbol == "App\\Models\\User::present"
+                && symbol.reachable_from_runtime
+        }));
+        assert!(report.symbols.iter().any(|symbol| {
+            symbol.kind == "model_accessor"
+                && symbol.symbol == "App\\Models\\User::display_name"
+                && symbol.reachable_from_runtime
+        }));
+        assert!(report.symbols.iter().any(|symbol| {
+            symbol.kind == "model_mutator"
+                && symbol.symbol == "App\\Models\\User::display_name"
+                && symbol.reachable_from_runtime
+        }));
+        assert!(!report.findings.iter().any(|finding| {
+            finding.category == "unused_model_accessor"
+                && finding.symbol == "App\\Models\\User::display_name"
+        }));
+        assert!(!report.findings.iter().any(|finding| {
+            finding.category == "unused_model_mutator"
+                && finding.symbol == "App\\Models\\User::display_name"
+        }));
     }
 
     #[test]

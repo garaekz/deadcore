@@ -128,12 +128,12 @@ fn process_class(
             Vec::new()
         };
         let accessors = if features.attribute_make {
-            detect_model_accessors(&methods)
+            detect_model_accessors(&methods, namespace, imports)
         } else {
             Vec::new()
         };
         let mutators = if features.attribute_make {
-            detect_model_mutators(&methods)
+            detect_model_mutators(&methods, namespace, imports)
         } else {
             Vec::new()
         };
@@ -656,7 +656,11 @@ fn detect_model_attributes(methods: &[MethodInfo]) -> Vec<String> {
     attributes
 }
 
-fn detect_model_accessors(methods: &[MethodInfo]) -> Vec<ModelAttributeFact> {
+fn detect_model_accessors(
+    methods: &[MethodInfo],
+    namespace: &str,
+    imports: &BTreeMap<String, String>,
+) -> Vec<ModelAttributeFact> {
     let legacy_accessor_re =
         Regex::new(r#"^get([A-Z][A-Za-z0-9_]*)Attribute$"#).expect("legacy accessor regex");
     let mut accessors = Vec::new();
@@ -674,7 +678,9 @@ fn detect_model_accessors(methods: &[MethodInfo]) -> Vec<ModelAttributeFact> {
             continue;
         }
 
-        if !method.text.contains("Attribute::make") || !method.text.contains("get:") {
+        if !method_uses_eloquent_attribute_make(method, namespace, imports)
+            || !method.text.contains("get:")
+        {
             continue;
         }
 
@@ -688,7 +694,11 @@ fn detect_model_accessors(methods: &[MethodInfo]) -> Vec<ModelAttributeFact> {
     dedup_attribute_facts(accessors)
 }
 
-fn detect_model_mutators(methods: &[MethodInfo]) -> Vec<ModelAttributeFact> {
+fn detect_model_mutators(
+    methods: &[MethodInfo],
+    namespace: &str,
+    imports: &BTreeMap<String, String>,
+) -> Vec<ModelAttributeFact> {
     let legacy_mutator_re =
         Regex::new(r#"^set([A-Z][A-Za-z0-9_]*)Attribute$"#).expect("legacy mutator regex");
     let mut mutators = Vec::new();
@@ -706,7 +716,9 @@ fn detect_model_mutators(methods: &[MethodInfo]) -> Vec<ModelAttributeFact> {
             continue;
         }
 
-        if !method.text.contains("Attribute::make") || !method.text.contains("set:") {
+        if !method_uses_eloquent_attribute_make(method, namespace, imports)
+            || !method.text.contains("set:")
+        {
             continue;
         }
 
@@ -748,6 +760,32 @@ fn dedup_attribute_facts(facts: Vec<ModelAttributeFact>) -> Vec<ModelAttributeFa
     }
 
     deduped
+}
+
+fn method_uses_eloquent_attribute_make(
+    method: &MethodInfo,
+    namespace: &str,
+    imports: &BTreeMap<String, String>,
+) -> bool {
+    if method.text.contains("\\Illuminate\\Database\\Eloquent\\Casts\\Attribute::make")
+        || method
+            .text
+            .contains("Illuminate\\Database\\Eloquent\\Casts\\Attribute::make")
+    {
+        return true;
+    }
+
+    if !method.text.contains("Attribute::make") {
+        return false;
+    }
+
+    imports
+        .get("Attribute")
+        .map(|resolved| resolved == "Illuminate\\Database\\Eloquent\\Casts\\Attribute")
+        .unwrap_or_else(|| {
+            qualify_name(namespace, "Attribute")
+                == "Illuminate\\Database\\Eloquent\\Casts\\Attribute"
+        })
 }
 
 fn normalize_attribute_name(value: &str) -> String {
@@ -1208,8 +1246,12 @@ mod tests {
             },
         ];
 
-        let accessors = detect_model_accessors(&methods);
-        let mutators = detect_model_mutators(&methods);
+        let imports = BTreeMap::from([(
+            "Attribute".to_string(),
+            "Illuminate\\Database\\Eloquent\\Casts\\Attribute".to_string(),
+        )]);
+        let accessors = detect_model_accessors(&methods, "App\\Models", &imports);
+        let mutators = detect_model_mutators(&methods, "App\\Models", &imports);
 
         assert_eq!(
             accessors
@@ -1225,6 +1267,27 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["display_name".to_string(), "secret_name".to_string()]
         );
+    }
+
+    #[test]
+    fn attribute_detection_requires_the_eloquent_attribute_type() {
+        let methods = vec![MethodInfo {
+            name: "secretName".to_string(),
+            text: "protected function secretName(): Attribute { return Attribute::make(get: fn ($value) => strtoupper($value), set: fn ($value) => strtolower($value)); }".to_string(),
+            is_public: false,
+            is_static: false,
+            parameter_count: 0,
+        }];
+        let imports = BTreeMap::from([(
+            "Attribute".to_string(),
+            "App\\Support\\Attribute".to_string(),
+        )]);
+
+        let accessors = detect_model_accessors(&methods, "App\\Models", &imports);
+        let mutators = detect_model_mutators(&methods, "App\\Models", &imports);
+
+        assert!(accessors.is_empty());
+        assert!(mutators.is_empty());
     }
 
     #[test]
