@@ -189,7 +189,7 @@ fn build_controller_method(
             Vec::new()
         },
         scopes_used: if features.scopes_used {
-            detect_scope_usage(&method.text)
+            detect_scope_usage(&method.text, namespace, imports)
         } else {
             Vec::new()
         },
@@ -507,9 +507,19 @@ fn detect_resources(
     items
 }
 
-fn detect_scope_usage(method_text: &str) -> Vec<ScopeUsageFact> {
-    let chain_re =
-        Regex::new(r#"(?:->|::)([A-Z]?[a-z][A-Za-z0-9_]*)\("#).expect("scope usage regex");
+fn detect_scope_usage(
+    method_text: &str,
+    namespace: &str,
+    imports: &BTreeMap<String, String>,
+) -> Vec<ScopeUsageFact> {
+    let direct_static_re =
+        Regex::new(r#"(?s)(\\?[A-Z][A-Za-z0-9_\\]*)::([a-z][A-Za-z0-9_]*)\s*\("#)
+            .expect("direct scope usage regex");
+    let explicit_chain_re =
+        Regex::new(r#"(?s)(\\?[A-Z][A-Za-z0-9_\\]*)::[A-Za-z_][A-Za-z0-9_]*\([^;]*"#)
+            .expect("explicit scope chain regex");
+    let chain_method_re =
+        Regex::new(r#"->([a-z][A-Za-z0-9_]*)\s*\("#).expect("scope chain method regex");
     let skip = [
         "json",
         "validate",
@@ -545,19 +555,50 @@ fn detect_scope_usage(method_text: &str) -> Vec<ScopeUsageFact> {
 
     let mut scopes = Vec::new();
     let mut seen = BTreeSet::new();
-    for captures in chain_re.captures_iter(method_text) {
-        let Some(name) = captures.get(1) else {
+
+    for captures in direct_static_re.captures_iter(method_text) {
+        let Some(class_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(name) = captures.get(2) else {
             continue;
         };
         let candidate = name.as_str().to_string();
         if skip.iter().any(|item| *item == candidate) {
             continue;
         }
-        if seen.insert(candidate.clone()) {
+        let owner = resolve_class_name(class_name.as_str(), namespace, imports);
+        if seen.insert((owner.clone(), candidate.clone())) {
             scopes.push(ScopeUsageFact {
                 name: candidate,
-                on: None,
+                on: Some(owner),
             });
+        }
+    }
+
+    for captures in explicit_chain_re.captures_iter(method_text) {
+        let Some(class_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(chain_text) = captures.get(0) else {
+            continue;
+        };
+        let owner = resolve_class_name(class_name.as_str(), namespace, imports);
+
+        for method_capture in chain_method_re.captures_iter(chain_text.as_str()) {
+            let Some(name) = method_capture.get(1) else {
+                continue;
+            };
+            let candidate = name.as_str().to_string();
+            if skip.iter().any(|item| *item == candidate) {
+                continue;
+            }
+            if seen.insert((owner.clone(), candidate.clone())) {
+                scopes.push(ScopeUsageFact {
+                    name: candidate,
+                    on: Some(owner.clone()),
+                });
+            }
         }
     }
 
@@ -999,7 +1040,11 @@ fn resolve_class_name(raw: &str, namespace: &str, imports: &BTreeMap<String, Str
 
 #[cfg(test)]
 mod tests {
-    use super::{MethodInfo, ModelRelationshipFact, extract_model_helper_methods};
+    use std::collections::BTreeMap;
+
+    use super::{
+        MethodInfo, ModelRelationshipFact, detect_scope_usage, extract_model_helper_methods,
+    };
 
     #[test]
     fn model_helper_candidates_skip_known_framework_hooks() {
@@ -1132,5 +1177,26 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(names, vec!["debugLabel".to_string(), "summary".to_string()]);
+    }
+
+    #[test]
+    fn detects_explicit_owner_for_class_anchored_scope_usage() {
+        let method_text = r#"public function index(): array
+    {
+        $service->published();
+
+        return Post::query()
+            ->published()
+            ->get()
+            ->all();
+        }"#;
+        let imports = BTreeMap::from([("Post".to_string(), "App\\Models\\Post".to_string())]);
+
+        let scopes = detect_scope_usage(method_text, "App\\Http\\Controllers", &imports);
+
+        assert_eq!(scopes.len(), 1);
+        assert_eq!(scopes[0].name, "published");
+        assert_eq!(scopes[0].on, Some("App\\Models\\Post".to_string()));
+        assert!(scopes.iter().all(|scope| scope.on.is_some()));
     }
 }

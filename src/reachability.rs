@@ -1005,15 +1005,8 @@ fn resolve_model_scope_owner(
 ) -> Option<String> {
     let owners = scope_owners.get(scope_name)?;
 
-    if let Some(owner) = explicit_owner.map(|owner| owner.trim_start_matches('\\')) {
-        return owners.contains(owner).then(|| owner.to_string());
-    }
-
-    if owners.len() == 1 {
-        owners.iter().next().cloned()
-    } else {
-        None
-    }
+    let owner = explicit_owner.map(|owner| owner.trim_start_matches('\\'))?;
+    owners.contains(owner).then(|| owner.to_string())
 }
 
 fn scope_method_suffix(scope_name: &str) -> String {
@@ -1934,6 +1927,143 @@ class Article extends Model
         assert!(report.findings.iter().any(|finding| {
             finding.category == "unused_model_scope"
                 && finding.symbol == "App\\Models\\Article::published"
+        }));
+    }
+
+    #[test]
+    fn ownerless_scope_usage_stays_unsupported_even_with_single_owner() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let request: AnalysisRequest = serde_json::from_value(json!({
+            "contractVersion": "deadcode.analysis.v1",
+            "requestId": "req-model-scope-ownerless",
+            "runtimeFingerprint": "fp-model-scope-ownerless",
+            "manifest": {
+                "project": {
+                    "root": root,
+                    "composer": "composer.json"
+                },
+                "scan": {
+                    "targets": ["app"],
+                    "globs": ["**/*.php"]
+                },
+                "features": {
+                    "http_status": true,
+                    "request_usage": false,
+                    "resource_usage": false,
+                    "scopes_used": true
+                }
+            },
+            "runtime": {
+                "app": {
+                    "basePath": env!("CARGO_MANIFEST_DIR"),
+                    "laravelVersion": "12.0.0",
+                    "phpVersion": "8.3.0",
+                    "appEnv": "testing"
+                },
+                "routes": [
+                    {
+                        "routeId": "posts.index",
+                        "methods": ["GET"],
+                        "uri": "posts",
+                        "domain": null,
+                        "name": "posts.index",
+                        "prefix": null,
+                        "middleware": [],
+                        "where": {},
+                        "defaults": {},
+                        "bindings": [],
+                        "action": {
+                            "kind": "controller_method",
+                            "fqcn": "App\\Http\\Controllers\\PostController",
+                            "method": "index"
+                        }
+                    }
+                ]
+            }
+        }))
+        .expect("request should deserialize");
+        let controller_source = r#"<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Post;
+use App\Support\SomeClass;
+
+final class PostController
+{
+    public function index(): array
+    {
+        return SomeClass::published();
+    }
+}
+"#;
+        let post_source = r#"<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Post extends Model
+{
+    public function scopePublished($query)
+    {
+        return $query;
+    }
+}
+"#;
+        let result = PipelineResult {
+            files: vec![
+                AnalyzedFile {
+                    path: root.join("app/Http/Controllers/PostController.php"),
+                    relative_path: "app/Http/Controllers/PostController.php".to_string(),
+                    source_text: controller_source.to_string(),
+                    facts: FileFacts {
+                        controllers: vec![ControllerMethod {
+                            class_name: "PostController".to_string(),
+                            fqcn: "App\\Http\\Controllers\\PostController".to_string(),
+                            method_name: "index".to_string(),
+                            body_text: "public function index(): array\n    {\n        return SomeClass::published();\n    }".to_string(),
+                            scopes_used: vec![ScopeUsageFact {
+                                name: "published".to_string(),
+                                on: None,
+                            }],
+                            ..ControllerMethod::default()
+                        }],
+                        ..FileFacts::default()
+                    },
+                },
+                AnalyzedFile {
+                    path: root.join("app/Models/Post.php"),
+                    relative_path: "app/Models/Post.php".to_string(),
+                    source_text: post_source.to_string(),
+                    facts: FileFacts {
+                        models: vec![ModelFacts {
+                            class_name: "Post".to_string(),
+                            fqcn: "App\\Models\\Post".to_string(),
+                            scopes: vec!["published".to_string()],
+                            ..ModelFacts::default()
+                        }],
+                        ..FileFacts::default()
+                    },
+                },
+            ],
+            route_bindings: Vec::new(),
+            partial: false,
+            duration_ms: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+        };
+
+        let report = analyze_controller_reachability(&request, &result);
+
+        assert!(!report.symbols.iter().any(|symbol| {
+            symbol.kind == "model_scope"
+                && symbol.symbol == "App\\Models\\Post::published"
+                && symbol.reachable_from_runtime
+        }));
+        assert!(report.findings.iter().any(|finding| {
+            finding.category == "unused_model_scope"
+                && finding.symbol == "App\\Models\\Post::published"
         }));
     }
 }
