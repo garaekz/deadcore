@@ -635,19 +635,36 @@ fn extract_model_helper_methods(
 
 fn is_known_framework_model_hook(name: &str) -> bool {
     const RESERVED_PREFIXES: [&str; 6] = ["boot", "get", "initialize", "new", "resolve", "set"];
-    const RESERVED_EXACT: [&str; 12] = [
+    const RESERVED_EXACT: [&str; 29] = [
         "attributesToArray",
+        "created",
+        "creating",
         "delete",
+        "deleted",
+        "deleting",
+        "forceDeleted",
+        "forceDeleting",
         "fresh",
         "jsonSerialize",
         "load",
         "loadMissing",
+        "pruned",
+        "pruning",
         "refresh",
         "relationsToArray",
         "replicate",
+        "replicating",
         "restore",
+        "restored",
+        "restoring",
+        "retrieved",
         "save",
+        "saved",
+        "saving",
         "toArray",
+        "trashed",
+        "updated",
+        "updating",
     ];
 
     RESERVED_PREFIXES
@@ -1050,6 +1067,48 @@ mod tests {
                 name: "getDisplayNameAttribute".to_string(),
                 text: "public function getDisplayNameAttribute(): string { return 'x'; }"
                     .to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 0,
+            },
+            MethodInfo {
+                name: "saved".to_string(),
+                text: "public function saved() { }".to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 0,
+            },
+            MethodInfo {
+                name: "deleted".to_string(),
+                text: "public function deleted() { }".to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 0,
+            },
+            MethodInfo {
+                name: "restored".to_string(),
+                text: "public function restored() { }".to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 0,
+            },
+            MethodInfo {
+                name: "retrieved".to_string(),
+                text: "public function retrieved() { }".to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 0,
+            },
+            MethodInfo {
+                name: "creating".to_string(),
+                text: "public function creating() { }".to_string(),
+                is_public: true,
+                is_static: false,
+                parameter_count: 0,
+            },
+            MethodInfo {
+                name: "updating".to_string(),
+                text: "public function updating() { }".to_string(),
                 is_public: true,
                 is_static: false,
                 parameter_count: 0,

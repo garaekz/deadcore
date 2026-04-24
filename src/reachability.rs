@@ -711,27 +711,90 @@ fn collect_reachable_model_methods(
         }
     }
 
-    for fqcn in reachable_commands
-        .iter()
-        .chain(reachable_listeners.iter())
-        .chain(reachable_subscribers.iter())
-        .chain(reachable_jobs.iter())
-        .chain(reachable_policies.iter())
-    {
+    collect_reachable_model_methods_from_runtime_roots(
+        &mut reachable_model_methods,
+        source_index,
+        reachable_commands,
+        &["handle"],
+        &model_methods,
+    );
+    collect_reachable_model_methods_from_runtime_roots(
+        &mut reachable_model_methods,
+        source_index,
+        reachable_listeners,
+        &["handle"],
+        &model_methods,
+    );
+    collect_reachable_model_methods_from_runtime_roots(
+        &mut reachable_model_methods,
+        source_index,
+        reachable_subscribers,
+        &["subscribe"],
+        &model_methods,
+    );
+    collect_reachable_model_methods_from_runtime_roots(
+        &mut reachable_model_methods,
+        source_index,
+        reachable_jobs,
+        &["handle"],
+        &model_methods,
+    );
+    collect_reachable_model_methods_from_policies(
+        &mut reachable_model_methods,
+        source_index,
+        reachable_policies,
+        &model_methods,
+    );
+
+    reachable_model_methods
+}
+
+fn collect_reachable_model_methods_from_runtime_roots(
+    reachable_model_methods: &mut BTreeSet<String>,
+    source_index: &SourceIndex,
+    runtime_roots: &BTreeSet<String>,
+    entrypoint_methods: &[&str],
+    model_methods: &BTreeMap<String, BTreeSet<String>>,
+) {
+    for fqcn in runtime_roots {
         let Some(source_class) = source_index.get(fqcn) else {
             continue;
         };
 
-        for (model_fqcn, method_name) in extract_called_model_methods_from_text(
-            &source_class.source_text,
-            source_class,
-            &model_methods,
-        ) {
-            reachable_model_methods.insert(format!("{model_fqcn}::{method_name}"));
+        for method_name in entrypoint_methods {
+            let Some(method_text) = extract_method_text(&source_class.source_text, method_name)
+            else {
+                continue;
+            };
+
+            for (model_fqcn, method_name) in
+                extract_called_model_methods_from_text(&method_text, source_class, model_methods)
+            {
+                reachable_model_methods.insert(format!("{model_fqcn}::{method_name}"));
+            }
         }
     }
+}
 
-    reachable_model_methods
+fn collect_reachable_model_methods_from_policies(
+    reachable_model_methods: &mut BTreeSet<String>,
+    source_index: &SourceIndex,
+    reachable_policies: &BTreeSet<String>,
+    model_methods: &BTreeMap<String, BTreeSet<String>>,
+) {
+    for fqcn in reachable_policies {
+        let Some(source_class) = source_index.get(fqcn) else {
+            continue;
+        };
+
+        for method_text in extract_policy_entrypoint_texts(source_class) {
+            for (model_fqcn, method_name) in
+                extract_called_model_methods_from_text(&method_text, source_class, model_methods)
+            {
+                reachable_model_methods.insert(format!("{model_fqcn}::{method_name}"));
+            }
+        }
+    }
 }
 
 fn collect_reachable_jobs(
@@ -1181,6 +1244,49 @@ fn collect_controller_callees(
     callees
 }
 
+fn extract_method_text(source: &str, method_name: &str) -> Option<String> {
+    let method_re = Regex::new(&format!(
+        r#"(?m)\bfunction\s+{}\s*\("#,
+        regex::escape(method_name)
+    ))
+    .expect("method text regex");
+    let method_match = method_re.find(source)?;
+    let brace_offset = source[method_match.end()..].find('{')?;
+    let brace_start = method_match.end() + brace_offset;
+    let (_, _, body_end_relative) = extract_balanced_region(&source[brace_start..], '{', '}')?;
+
+    Some(source[method_match.start()..(brace_start + body_end_relative + 1)].to_string())
+}
+
+fn extract_policy_entrypoint_texts(source_class: &SourceClass) -> Vec<String> {
+    let public_method_re =
+        Regex::new(r#"(?m)\bpublic\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)"#)
+            .expect("policy public method regex");
+    let mut methods = Vec::new();
+    let mut seen = BTreeSet::new();
+
+    for captures in public_method_re.captures_iter(&source_class.source_text) {
+        let Some(method_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(parameters) = captures.get(2) else {
+            continue;
+        };
+        let method_name = method_name.as_str();
+        if method_name == "__construct" || parameters.as_str().trim().is_empty() {
+            continue;
+        }
+        if !seen.insert(method_name.to_string()) {
+            continue;
+        }
+        if let Some(method_text) = extract_method_text(&source_class.source_text, method_name) {
+            methods.push(method_text);
+        }
+    }
+
+    methods
+}
+
 fn extract_called_model_methods_from_text(
     text: &str,
     source_class: &SourceClass,
@@ -1443,6 +1549,12 @@ class ReportInvoicesCommand extends Command
     {
         $invoice = Invoice::findOrFail($id);
         $invoice->summary();
+    }
+
+    public function helper(): void
+    {
+        $invoice = new Invoice();
+        $invoice->debugLabel();
     }
 }
 "#;
