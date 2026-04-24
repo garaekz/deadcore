@@ -7,7 +7,8 @@ use tree_sitter::Node;
 use crate::manifest::FeatureFlags;
 use crate::model::{
     BroadcastFact, BroadcastParameterFact, ControllerMethod, FileFacts, ModelFacts,
-    ModelRelationshipFact, PolymorphicFact, RequestUsageFact, ResourceUsageFact, ScopeUsageFact,
+    ModelMethodFact, ModelRelationshipFact, PolymorphicFact, RequestUsageFact, ResourceUsageFact,
+    ScopeUsageFact,
 };
 use crate::parser::ParsedUnit;
 
@@ -127,6 +128,7 @@ fn process_class(
             Vec::new()
         };
         let relationships = extract_model_relationships(&methods, namespace, imports);
+        let helper_methods = extract_model_helper_methods(&methods, &relationships, &attributes);
 
         if features.polymorphic {
             for relationship in &relationships {
@@ -153,6 +155,7 @@ fn process_class(
             relationships,
             scopes,
             attributes,
+            methods: helper_methods,
         });
     }
 }
@@ -584,6 +587,39 @@ fn detect_model_attributes(methods: &[MethodInfo]) -> Vec<String> {
     attributes.sort();
     attributes.dedup();
     attributes
+}
+
+fn extract_model_helper_methods(
+    methods: &[MethodInfo],
+    relationships: &[ModelRelationshipFact],
+    attributes: &[String],
+) -> Vec<ModelMethodFact> {
+    let relationship_names = relationships
+        .iter()
+        .map(|relationship| relationship.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let attribute_names = attributes
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let accessor_mutator_re =
+        Regex::new(r#"^(?:get|set)[A-Z][A-Za-z0-9_]*Attribute$"#).expect("accessor regex");
+    let mut helper_methods = methods
+        .iter()
+        .filter(|method| method.is_public)
+        .filter(|method| !method.name.starts_with("__"))
+        .filter(|method| !method.name.starts_with("scope"))
+        .filter(|method| !relationship_names.contains(method.name.as_str()))
+        .filter(|method| !attribute_names.contains(method.name.as_str()))
+        .filter(|method| !accessor_mutator_re.is_match(&method.name))
+        .map(|method| ModelMethodFact {
+            name: method.name.clone(),
+            body_text: method.text.clone(),
+        })
+        .collect::<Vec<_>>();
+    helper_methods.sort_by(|a, b| a.name.cmp(&b.name));
+    helper_methods.dedup_by(|a, b| a.name == b.name);
+    helper_methods
 }
 
 fn extract_model_relationships(

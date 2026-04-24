@@ -7,14 +7,15 @@ use crate::deadcode_model::{
     CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, FINDING_CATEGORY_UNUSED_COMMAND_CLASS,
     FINDING_CATEGORY_UNUSED_CONTROLLER_CLASS, FINDING_CATEGORY_UNUSED_CONTROLLER_METHOD,
     FINDING_CATEGORY_UNUSED_FORM_REQUEST, FINDING_CATEGORY_UNUSED_JOB_CLASS,
-    FINDING_CATEGORY_UNUSED_LISTENER_CLASS, FINDING_CATEGORY_UNUSED_POLICY_CLASS,
-    FINDING_CATEGORY_UNUSED_RESOURCE_CLASS, FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding,
-    SYMBOL_KIND_COMMAND_CLASS, SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD,
-    SYMBOL_KIND_FORM_REQUEST_CLASS, SYMBOL_KIND_JOB_CLASS, SYMBOL_KIND_LISTENER_CLASS,
+    FINDING_CATEGORY_UNUSED_LISTENER_CLASS, FINDING_CATEGORY_UNUSED_MODEL_METHOD,
+    FINDING_CATEGORY_UNUSED_POLICY_CLASS, FINDING_CATEGORY_UNUSED_RESOURCE_CLASS,
+    FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding, SYMBOL_KIND_COMMAND_CLASS,
+    SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD, SYMBOL_KIND_FORM_REQUEST_CLASS,
+    SYMBOL_KIND_JOB_CLASS, SYMBOL_KIND_LISTENER_CLASS, SYMBOL_KIND_MODEL_METHOD,
     SYMBOL_KIND_POLICY_CLASS, SYMBOL_KIND_RESOURCE_CLASS, SYMBOL_KIND_SUBSCRIBER_CLASS,
     SymbolRecord,
 };
-use crate::model::{AnalyzedFile, ControllerMethod};
+use crate::model::{AnalyzedFile, ControllerMethod, ModelMethodFact};
 use crate::parser::line_range_for_span;
 use crate::pipeline::PipelineResult;
 use crate::source_index::{SourceClass, SourceIndex, extract_balanced_region};
@@ -112,6 +113,8 @@ pub fn analyze_controller_reachability(
     let reachable_form_requests =
         collect_reachable_form_requests(result, &source_index, &reachable_actions);
     let reachable_resources = collect_reachable_resources(result, &reachable_actions);
+    let reachable_model_methods =
+        collect_reachable_model_methods(result, &source_index, &reachable_actions);
     let reachable_commands = request
         .runtime
         .commands
@@ -237,6 +240,50 @@ pub fn analyze_controller_reachability(
                 start_line,
                 end_line,
             });
+        }
+    }
+
+    for file in &result.files {
+        for model in &file.facts.models {
+            for method in &model.methods {
+                let symbol = format!("{}::{}", model.fqcn, method.name);
+                let reachable_from_runtime = reachable_model_methods.contains(&symbol);
+                let line_range = find_model_method_line_range(file, method);
+                let (start_line, end_line) = line_range
+                    .map(|(start, end)| (Some(start), Some(end)))
+                    .unwrap_or((None, None));
+
+                symbols.push(SymbolRecord {
+                    kind: SYMBOL_KIND_MODEL_METHOD.to_string(),
+                    symbol: symbol.clone(),
+                    file: file.relative_path.clone(),
+                    reachable_from_runtime,
+                    start_line,
+                    end_line,
+                });
+
+                if reachable_from_runtime {
+                    continue;
+                }
+
+                findings.push(Finding {
+                    symbol: symbol.clone(),
+                    category: FINDING_CATEGORY_UNUSED_MODEL_METHOD.to_string(),
+                    confidence: CONFIDENCE_HIGH.to_string(),
+                    file: file.relative_path.clone(),
+                    start_line,
+                    end_line,
+                });
+
+                if let (Some(start_line), Some(end_line)) = (start_line, end_line) {
+                    change_sets.push(RemovalChangeSet {
+                        file: file.relative_path.clone(),
+                        symbol,
+                        start_line,
+                        end_line,
+                    });
+                }
+            }
         }
     }
 
@@ -610,6 +657,48 @@ fn collect_reachable_resources(
     reachable_resources
 }
 
+fn collect_reachable_model_methods(
+    result: &PipelineResult,
+    source_index: &SourceIndex,
+    reachable_actions: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let model_methods = result
+        .files
+        .iter()
+        .flat_map(|file| file.facts.models.iter())
+        .map(|model| {
+            (
+                model.fqcn.clone(),
+                model
+                    .methods
+                    .iter()
+                    .map(|method| method.name.clone())
+                    .collect::<BTreeSet<_>>(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut reachable_model_methods = BTreeSet::new();
+
+    for (_, controller) in result.controller_methods() {
+        let symbol = format!("{}::{}", controller.fqcn, controller.method_name);
+        if !reachable_actions.contains(&symbol) {
+            continue;
+        }
+
+        let Some(source_class) = source_index.get(&controller.fqcn) else {
+            continue;
+        };
+
+        for (model_fqcn, method_name) in
+            extract_called_model_methods(controller, source_class, &model_methods)
+        {
+            reachable_model_methods.insert(format!("{model_fqcn}::{method_name}"));
+        }
+    }
+
+    reachable_model_methods
+}
+
 fn collect_reachable_jobs(
     result: &PipelineResult,
     source_index: &SourceIndex,
@@ -672,6 +761,19 @@ fn find_method_line_range(
             file.source_text.as_bytes(),
             start,
             start + controller.body_text.len(),
+        )
+    })
+}
+
+fn find_model_method_line_range(
+    file: &AnalyzedFile,
+    method: &ModelMethodFact,
+) -> Option<(usize, usize)> {
+    file.source_text.find(&method.body_text).map(|start| {
+        line_range_for_span(
+            file.source_text.as_bytes(),
+            start,
+            start + method.body_text.len(),
         )
     })
 }
@@ -1042,6 +1144,106 @@ fn collect_controller_callees(
         }
     }
     callees
+}
+
+fn extract_called_model_methods(
+    controller: &ControllerMethod,
+    source_class: &SourceClass,
+    model_methods: &BTreeMap<String, BTreeSet<String>>,
+) -> BTreeSet<(String, String)> {
+    let mut called = BTreeSet::new();
+    let mut model_variables = collect_model_variables(controller, source_class, model_methods);
+
+    let instance_call_re =
+        Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
+            .expect("model instance call regex");
+    for captures in instance_call_re.captures_iter(&controller.body_text) {
+        let Some(variable_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(method_name) = captures.get(2) else {
+            continue;
+        };
+        let Some(model_fqcn) = model_variables.get(variable_name.as_str()) else {
+            continue;
+        };
+        if model_methods
+            .get(model_fqcn)
+            .is_some_and(|methods| methods.contains(method_name.as_str()))
+        {
+            called.insert((model_fqcn.clone(), method_name.as_str().to_string()));
+        }
+    }
+
+    let static_call_re = Regex::new(r#"([A-Z][A-Za-z0-9_\\]*)::([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
+        .expect("model static call regex");
+    for captures in static_call_re.captures_iter(&controller.body_text) {
+        let Some(class_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(method_name) = captures.get(2) else {
+            continue;
+        };
+        let resolved_class = source_class.resolve_name(class_name.as_str());
+        if model_methods
+            .get(&resolved_class)
+            .is_some_and(|methods| methods.contains(method_name.as_str()))
+        {
+            called.insert((resolved_class, method_name.as_str().to_string()));
+        }
+    }
+
+    model_variables.clear();
+    called
+}
+
+fn collect_model_variables(
+    controller: &ControllerMethod,
+    source_class: &SourceClass,
+    model_methods: &BTreeMap<String, BTreeSet<String>>,
+) -> BTreeMap<String, String> {
+    let mut variables = BTreeMap::new();
+    let signature_re =
+        Regex::new(r#"function\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*)\)"#).expect("signature regex");
+    let parameter_re = Regex::new(r#"(?:(\??[A-Z][A-Za-z0-9_\\]*)\s+)?\$([A-Za-z_][A-Za-z0-9_]*)"#)
+        .expect("parameter regex");
+    if let Some(captures) = signature_re.captures(&controller.body_text) {
+        if let Some(group) = captures.get(1) {
+            for parameter in group.as_str().split(',') {
+                let Some(captures) = parameter_re.captures(parameter.trim()) else {
+                    continue;
+                };
+                let Some(raw_type) = captures.get(1) else {
+                    continue;
+                };
+                let Some(variable_name) = captures.get(2) else {
+                    continue;
+                };
+                let resolved = source_class.resolve_name(raw_type.as_str().trim_start_matches('?'));
+                if model_methods.contains_key(&resolved) {
+                    variables.insert(variable_name.as_str().to_string(), resolved);
+                }
+            }
+        }
+    }
+
+    let new_model_re =
+        Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)\s*=\s*new\s+([A-Z][A-Za-z0-9_\\]*)\b"#)
+            .expect("new model regex");
+    for captures in new_model_re.captures_iter(&controller.body_text) {
+        let Some(variable_name) = captures.get(1) else {
+            continue;
+        };
+        let Some(class_name) = captures.get(2) else {
+            continue;
+        };
+        let resolved = source_class.resolve_name(class_name.as_str());
+        if model_methods.contains_key(&resolved) {
+            variables.insert(variable_name.as_str().to_string(), resolved);
+        }
+    }
+
+    variables
 }
 
 fn resolve_called_controller(
