@@ -106,6 +106,8 @@ pub struct RuntimeSnapshot {
     #[serde(default)]
     pub commands: Vec<RuntimeCommand>,
     #[serde(default)]
+    pub listeners: Vec<RuntimeListener>,
+    #[serde(default)]
     pub packages: Vec<RuntimePackage>,
 }
 
@@ -157,6 +159,15 @@ pub struct RuntimeCommand {
     pub signature: String,
     pub fqcn: String,
     pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeListener {
+    #[serde(rename = "eventFqcn")]
+    pub event_fqcn: String,
+    #[serde(rename = "listenerFqcn")]
+    pub listener_fqcn: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
