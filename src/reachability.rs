@@ -7,10 +7,10 @@ use crate::deadcode_model::{
     CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, FINDING_CATEGORY_UNUSED_COMMAND_CLASS,
     FINDING_CATEGORY_UNUSED_CONTROLLER_CLASS, FINDING_CATEGORY_UNUSED_CONTROLLER_METHOD,
     FINDING_CATEGORY_UNUSED_FORM_REQUEST, FINDING_CATEGORY_UNUSED_LISTENER_CLASS,
-    FINDING_CATEGORY_UNUSED_RESOURCE_CLASS, Finding,
+    FINDING_CATEGORY_UNUSED_RESOURCE_CLASS, FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding,
     SYMBOL_KIND_COMMAND_CLASS, SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD,
     SYMBOL_KIND_FORM_REQUEST_CLASS, SYMBOL_KIND_LISTENER_CLASS, SYMBOL_KIND_RESOURCE_CLASS,
-    SymbolRecord,
+    SYMBOL_KIND_SUBSCRIBER_CLASS, SymbolRecord,
 };
 use crate::model::{AnalyzedFile, ControllerMethod};
 use crate::parser::line_range_for_span;
@@ -72,6 +72,14 @@ pub fn analyze_controller_reachability(
         });
     }
 
+    for subscriber in &request.runtime.subscribers {
+        entrypoints.push(Entrypoint {
+            kind: "runtime_subscriber".to_string(),
+            symbol: subscriber.fqcn.clone(),
+            source: subscriber.fqcn.clone(),
+        });
+    }
+
     while let Some(symbol) = worklist.pop_front() {
         let Some(callees) = call_graph.get(&symbol) else {
             continue;
@@ -97,6 +105,12 @@ pub fn analyze_controller_reachability(
         .listeners
         .iter()
         .map(|listener| listener.listener_fqcn.clone())
+        .collect::<BTreeSet<_>>();
+    let reachable_subscribers = request
+        .runtime
+        .subscribers
+        .iter()
+        .map(|subscriber| subscriber.fqcn.clone())
         .collect::<BTreeSet<_>>();
     let mut symbols = Vec::new();
     let mut findings = Vec::new();
@@ -374,6 +388,50 @@ pub fn analyze_controller_reachability(
         }
     }
 
+    for class in source_index.classes.values() {
+        if !is_subscriber_class(class, &reachable_subscribers) {
+            continue;
+        }
+
+        let line_range = find_class_line_range(class);
+        let (start_line, end_line) = line_range
+            .map(|(start, end)| (Some(start), Some(end)))
+            .unwrap_or((None, None));
+        let reachable_from_runtime = reachable_subscribers.contains(&class.fqcn);
+
+        symbols.push(SymbolRecord {
+            kind: SYMBOL_KIND_SUBSCRIBER_CLASS.to_string(),
+            symbol: class.fqcn.clone(),
+            file: class.relative_path.clone(),
+            reachable_from_runtime,
+            start_line,
+            end_line,
+        });
+
+        if reachable_from_runtime {
+            continue;
+        }
+
+        let removal_range = explicit_subscriber_removal_range(class);
+        findings.push(Finding {
+            symbol: class.fqcn.clone(),
+            category: FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS.to_string(),
+            confidence: subscriber_class_confidence(class, removal_range).to_string(),
+            file: class.relative_path.clone(),
+            start_line,
+            end_line,
+        });
+
+        if let Some((start_line, end_line)) = removal_range {
+            change_sets.push(RemovalChangeSet {
+                file: class.relative_path.clone(),
+                symbol: class.fqcn.clone(),
+                start_line,
+                end_line,
+            });
+        }
+    }
+
     entrypoints
         .sort_by(|a, b| (&a.kind, &a.symbol, &a.source).cmp(&(&b.kind, &b.symbol, &b.source)));
     symbols.sort_by(|a, b| (&a.symbol, &a.file).cmp(&(&b.symbol, &b.file)));
@@ -623,6 +681,30 @@ fn explicit_listener_removal_range(class: &SourceClass) -> Option<(usize, usize)
     find_class_line_range(class)
 }
 
+fn subscriber_class_confidence(
+    class: &SourceClass,
+    removal_range: Option<(usize, usize)>,
+) -> &'static str {
+    if removal_range.is_some()
+        && class.relative_path.starts_with("app/Listeners/")
+        && class_declaration_count(&class.source_text) == 1
+    {
+        CONFIDENCE_HIGH
+    } else {
+        CONFIDENCE_MEDIUM
+    }
+}
+
+fn explicit_subscriber_removal_range(class: &SourceClass) -> Option<(usize, usize)> {
+    if !class.relative_path.starts_with("app/Listeners/")
+        || class_declaration_count(&class.source_text) != 1
+    {
+        return None;
+    }
+
+    find_class_line_range(class)
+}
+
 fn class_declaration_count(source: &str) -> usize {
     Regex::new(r#"(?m)^\s*(?:final\s+|abstract\s+)?class\s+[A-Za-z_][A-Za-z0-9_]*\b"#)
         .expect("class declaration count regex")
@@ -638,6 +720,16 @@ fn is_listener_class(class: &SourceClass, reachable_listeners: &BTreeSet<String>
     class.relative_path.starts_with("app/Listeners/")
         && has_method(&class.source_text, "handle")
         && !has_method(&class.source_text, "subscribe")
+}
+
+fn is_subscriber_class(class: &SourceClass, reachable_subscribers: &BTreeSet<String>) -> bool {
+    if reachable_subscribers.contains(&class.fqcn) {
+        return true;
+    }
+
+    class.relative_path.starts_with("app/Listeners/")
+        && has_method(&class.source_text, "subscribe")
+        && !has_method(&class.source_text, "handle")
 }
 
 fn has_method(source: &str, method_name: &str) -> bool {
