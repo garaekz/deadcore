@@ -161,6 +161,7 @@ pub fn analyze_controller_reachability(
         result,
         &source_index,
         &reachable_actions,
+        &reachable_model_methods,
         &reachable_commands,
         &reachable_listeners,
         &reachable_subscribers,
@@ -874,6 +875,7 @@ fn collect_reachable_model_relationships(
     result: &PipelineResult,
     source_index: &SourceIndex,
     reachable_actions: &BTreeSet<String>,
+    reachable_model_methods: &BTreeSet<String>,
     reachable_commands: &BTreeSet<String>,
     reachable_listeners: &BTreeSet<String>,
     reachable_subscribers: &BTreeSet<String>,
@@ -911,6 +913,7 @@ fn collect_reachable_model_relationships(
             &controller.body_text,
             source_class,
             &model_relationships,
+            None,
         ) {
             reachable_model_relationships.insert(format!("{model_fqcn}::{relationship_name}"));
         }
@@ -948,6 +951,13 @@ fn collect_reachable_model_relationships(
         &mut reachable_model_relationships,
         source_index,
         reachable_policies,
+        &model_relationships,
+    );
+    collect_reachable_model_relationships_from_model_methods(
+        &mut reachable_model_relationships,
+        result,
+        source_index,
+        reachable_model_methods,
         &model_relationships,
     );
 
@@ -1024,6 +1034,7 @@ fn collect_reachable_model_relationships_from_runtime_roots(
                 &method_text,
                 source_class,
                 model_relationships,
+                None,
             ) {
                 reachable_model_relationships.insert(format!("{model_fqcn}::{relationship_name}"));
             }
@@ -1047,8 +1058,42 @@ fn collect_reachable_model_relationships_from_policies(
                 &method_text,
                 source_class,
                 model_relationships,
+                None,
             ) {
                 reachable_model_relationships.insert(format!("{model_fqcn}::{relationship_name}"));
+            }
+        }
+    }
+}
+
+fn collect_reachable_model_relationships_from_model_methods(
+    reachable_model_relationships: &mut BTreeSet<String>,
+    result: &PipelineResult,
+    source_index: &SourceIndex,
+    reachable_model_methods: &BTreeSet<String>,
+    model_relationships: &BTreeMap<String, BTreeSet<String>>,
+) {
+    for file in &result.files {
+        for model in &file.facts.models {
+            let Some(source_class) = source_index.get(&model.fqcn) else {
+                continue;
+            };
+
+            for method in &model.methods {
+                let symbol = format!("{}::{}", model.fqcn, method.name);
+                if !reachable_model_methods.contains(&symbol) {
+                    continue;
+                }
+
+                for (model_fqcn, relationship_name) in extract_called_model_relationships_from_text(
+                    &method.body_text,
+                    source_class,
+                    model_relationships,
+                    Some(&model.fqcn),
+                ) {
+                    reachable_model_relationships
+                        .insert(format!("{model_fqcn}::{relationship_name}"));
+                }
             }
         }
     }
@@ -1629,7 +1674,8 @@ fn extract_called_model_methods_from_text(
 ) -> BTreeSet<(String, String)> {
     let mut called = BTreeSet::new();
     let known_models = model_methods.keys().cloned().collect::<BTreeSet<_>>();
-    let model_variables = collect_model_variables_from_text(text, source_class, &known_models);
+    let model_variables =
+        collect_model_variables_from_text(text, source_class, &known_models, None);
 
     let instance_call_re =
         Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
@@ -1677,10 +1723,12 @@ fn extract_called_model_relationships_from_text(
     text: &str,
     source_class: &SourceClass,
     model_relationships: &BTreeMap<String, BTreeSet<String>>,
+    implicit_model_fqcn: Option<&str>,
 ) -> BTreeSet<(String, String)> {
     let mut called = BTreeSet::new();
     let known_models = model_relationships.keys().cloned().collect::<BTreeSet<_>>();
-    let model_variables = collect_model_variables_from_text(text, source_class, &known_models);
+    let model_variables =
+        collect_model_variables_from_text(text, source_class, &known_models, implicit_model_fqcn);
 
     let instance_call_re =
         Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)\s*\("#)
@@ -1782,8 +1830,14 @@ fn collect_model_variables_from_text(
     text: &str,
     source_class: &SourceClass,
     known_models: &BTreeSet<String>,
+    implicit_model_fqcn: Option<&str>,
 ) -> BTreeMap<String, String> {
     let mut variables = BTreeMap::new();
+    if let Some(model_fqcn) = implicit_model_fqcn {
+        if known_models.contains(model_fqcn) {
+            variables.insert("this".to_string(), model_fqcn.to_string());
+        }
+    }
     let parameter_re = Regex::new(r#"(?:(\??[A-Z][A-Za-z0-9_\\]*)\s+)\$([A-Za-z_][A-Za-z0-9_]*)"#)
         .expect("parameter regex");
     for captures in parameter_re.captures_iter(text) {
@@ -1872,8 +1926,8 @@ fn register_eager_loaded_model_relationships(
     model_fqcn: &str,
     text: &str,
 ) {
-    let eager_load_re =
-        Regex::new(r#"->(with|load|loadMissing)\s*\("#).expect("relationship eager load regex");
+    let eager_load_re = Regex::new(r#"(?:->(?:with|load|loadMissing)|::with)\s*\("#)
+        .expect("relationship eager load regex");
     let Some(known_relationships) = model_relationships.get(model_fqcn) else {
         return;
     };
@@ -2023,7 +2077,8 @@ mod tests {
     use super::analyze_controller_reachability;
     use crate::contracts::AnalysisRequest;
     use crate::model::{
-        AnalyzedFile, ControllerMethod, FileFacts, ModelFacts, ModelMethodFact, ScopeUsageFact,
+        AnalyzedFile, ControllerMethod, FileFacts, ModelFacts, ModelMethodFact,
+        ModelRelationshipFact, ScopeUsageFact,
     };
     use crate::pipeline::PipelineResult;
 
@@ -2474,6 +2529,338 @@ class Post extends Model
         assert!(report.findings.iter().any(|finding| {
             finding.category == "unused_model_scope"
                 && finding.symbol == "App\\Models\\Post::published"
+        }));
+    }
+
+    #[test]
+    fn reachable_model_method_keeps_explicit_relationship_alive() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let request: AnalysisRequest = serde_json::from_value(json!({
+            "contractVersion": "deadcode.analysis.v1",
+            "requestId": "req-model-relationship-method-propagation",
+            "runtimeFingerprint": "fp-model-relationship-method-propagation",
+            "manifest": {
+                "project": {
+                    "root": root,
+                    "composer": "composer.json"
+                },
+                "scan": {
+                    "targets": ["app"],
+                    "globs": ["**/*.php"]
+                },
+                "features": {
+                    "http_status": true,
+                    "request_usage": false,
+                    "resource_usage": false
+                }
+            },
+            "runtime": {
+                "app": {
+                    "basePath": env!("CARGO_MANIFEST_DIR"),
+                    "laravelVersion": "12.0.0",
+                    "phpVersion": "8.3.0",
+                    "appEnv": "testing"
+                },
+                "routes": [
+                    {
+                        "routeId": "invoices.show",
+                        "methods": ["GET"],
+                        "uri": "invoices/{invoice}",
+                        "domain": null,
+                        "name": "invoices.show",
+                        "prefix": null,
+                        "middleware": [],
+                        "where": {},
+                        "defaults": {},
+                        "bindings": [],
+                        "action": {
+                            "kind": "controller_method",
+                            "fqcn": "App\\Http\\Controllers\\InvoiceController",
+                            "method": "show"
+                        }
+                    }
+                ]
+            }
+        }))
+        .expect("request should deserialize");
+        let controller_source = r#"<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Invoice;
+
+final class InvoiceController
+{
+    public function show(Invoice $invoice): array
+    {
+        return [$invoice->summary()];
+    }
+}
+"#;
+        let model_source = r#"<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Invoice extends Model
+{
+    public function summary(): array
+    {
+        return [$this->customer];
+    }
+
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class);
+    }
+
+    public function legacyNotes()
+    {
+        return $this->hasMany(Note::class);
+    }
+}
+"#;
+        let result = PipelineResult {
+            files: vec![
+                AnalyzedFile {
+                    path: root.join("app/Http/Controllers/InvoiceController.php"),
+                    relative_path: "app/Http/Controllers/InvoiceController.php".to_string(),
+                    source_text: controller_source.to_string(),
+                    facts: FileFacts {
+                        controllers: vec![ControllerMethod {
+                            class_name: "InvoiceController".to_string(),
+                            fqcn: "App\\Http\\Controllers\\InvoiceController".to_string(),
+                            method_name: "show".to_string(),
+                            body_text: "public function show(Invoice $invoice): array\n    {\n        return [$invoice->summary()];\n    }".to_string(),
+                            ..ControllerMethod::default()
+                        }],
+                        ..FileFacts::default()
+                    },
+                },
+                AnalyzedFile {
+                    path: root.join("app/Models/Invoice.php"),
+                    relative_path: "app/Models/Invoice.php".to_string(),
+                    source_text: model_source.to_string(),
+                    facts: FileFacts {
+                        models: vec![ModelFacts {
+                            class_name: "Invoice".to_string(),
+                            fqcn: "App\\Models\\Invoice".to_string(),
+                            relationships: vec![
+                                ModelRelationshipFact {
+                                    name: "customer".to_string(),
+                                    relation_type: "belongsTo".to_string(),
+                                    related: Some("App\\Models\\Customer".to_string()),
+                                    pivot_columns: Vec::new(),
+                                    pivot_alias: None,
+                                    pivot_timestamps: false,
+                                    morph_name: None,
+                                },
+                                ModelRelationshipFact {
+                                    name: "legacyNotes".to_string(),
+                                    relation_type: "hasMany".to_string(),
+                                    related: Some("App\\Models\\Note".to_string()),
+                                    pivot_columns: Vec::new(),
+                                    pivot_alias: None,
+                                    pivot_timestamps: false,
+                                    morph_name: None,
+                                },
+                            ],
+                            methods: vec![ModelMethodFact {
+                                name: "summary".to_string(),
+                                body_text: "public function summary(): array\n    {\n        return [$this->customer];\n    }".to_string(),
+                            }],
+                            ..ModelFacts::default()
+                        }],
+                        ..FileFacts::default()
+                    },
+                },
+            ],
+            route_bindings: Vec::new(),
+            partial: false,
+            duration_ms: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+        };
+
+        let report = analyze_controller_reachability(&request, &result);
+
+        assert!(report.symbols.iter().any(|symbol| {
+            symbol.kind == "model_method"
+                && symbol.symbol == "App\\Models\\Invoice::summary"
+                && symbol.reachable_from_runtime
+        }));
+        assert!(report.symbols.iter().any(|symbol| {
+            symbol.kind == "model_relationship"
+                && symbol.symbol == "App\\Models\\Invoice::customer"
+                && symbol.reachable_from_runtime
+        }));
+        assert!(!report.findings.iter().any(|finding| {
+            finding.category == "unused_model_relationship"
+                && finding.symbol == "App\\Models\\Invoice::customer"
+        }));
+        assert!(report.findings.iter().any(|finding| {
+            finding.category == "unused_model_relationship"
+                && finding.symbol == "App\\Models\\Invoice::legacyNotes"
+        }));
+    }
+
+    #[test]
+    fn static_with_keeps_explicit_relationship_alive() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let request: AnalysisRequest = serde_json::from_value(json!({
+            "contractVersion": "deadcode.analysis.v1",
+            "requestId": "req-model-relationship-static-with",
+            "runtimeFingerprint": "fp-model-relationship-static-with",
+            "manifest": {
+                "project": {
+                    "root": root,
+                    "composer": "composer.json"
+                },
+                "scan": {
+                    "targets": ["app"],
+                    "globs": ["**/*.php"]
+                },
+                "features": {
+                    "http_status": true,
+                    "request_usage": false,
+                    "resource_usage": false
+                }
+            },
+            "runtime": {
+                "app": {
+                    "basePath": env!("CARGO_MANIFEST_DIR"),
+                    "laravelVersion": "12.0.0",
+                    "phpVersion": "8.3.0",
+                    "appEnv": "testing"
+                },
+                "routes": [
+                    {
+                        "routeId": "invoices.index",
+                        "methods": ["GET"],
+                        "uri": "invoices",
+                        "domain": null,
+                        "name": "invoices.index",
+                        "prefix": null,
+                        "middleware": [],
+                        "where": {},
+                        "defaults": {},
+                        "bindings": [],
+                        "action": {
+                            "kind": "controller_method",
+                            "fqcn": "App\\Http\\Controllers\\InvoiceController",
+                            "method": "index"
+                        }
+                    }
+                ]
+            }
+        }))
+        .expect("request should deserialize");
+        let controller_source = r#"<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\Invoice;
+
+final class InvoiceController
+{
+    public function index(): array
+    {
+        return [Invoice::with('customer')->firstOrFail()];
+    }
+}
+"#;
+        let model_source = r#"<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+
+class Invoice extends Model
+{
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class);
+    }
+
+    public function legacyNotes()
+    {
+        return $this->hasMany(Note::class);
+    }
+}
+"#;
+        let result = PipelineResult {
+            files: vec![
+                AnalyzedFile {
+                    path: root.join("app/Http/Controllers/InvoiceController.php"),
+                    relative_path: "app/Http/Controllers/InvoiceController.php".to_string(),
+                    source_text: controller_source.to_string(),
+                    facts: FileFacts {
+                        controllers: vec![ControllerMethod {
+                            class_name: "InvoiceController".to_string(),
+                            fqcn: "App\\Http\\Controllers\\InvoiceController".to_string(),
+                            method_name: "index".to_string(),
+                            body_text: "public function index(): array\n    {\n        return [Invoice::with('customer')->firstOrFail()];\n    }".to_string(),
+                            ..ControllerMethod::default()
+                        }],
+                        ..FileFacts::default()
+                    },
+                },
+                AnalyzedFile {
+                    path: root.join("app/Models/Invoice.php"),
+                    relative_path: "app/Models/Invoice.php".to_string(),
+                    source_text: model_source.to_string(),
+                    facts: FileFacts {
+                        models: vec![ModelFacts {
+                            class_name: "Invoice".to_string(),
+                            fqcn: "App\\Models\\Invoice".to_string(),
+                            relationships: vec![
+                                ModelRelationshipFact {
+                                    name: "customer".to_string(),
+                                    relation_type: "belongsTo".to_string(),
+                                    related: Some("App\\Models\\Customer".to_string()),
+                                    pivot_columns: Vec::new(),
+                                    pivot_alias: None,
+                                    pivot_timestamps: false,
+                                    morph_name: None,
+                                },
+                                ModelRelationshipFact {
+                                    name: "legacyNotes".to_string(),
+                                    relation_type: "hasMany".to_string(),
+                                    related: Some("App\\Models\\Note".to_string()),
+                                    pivot_columns: Vec::new(),
+                                    pivot_alias: None,
+                                    pivot_timestamps: false,
+                                    morph_name: None,
+                                },
+                            ],
+                            ..ModelFacts::default()
+                        }],
+                        ..FileFacts::default()
+                    },
+                },
+            ],
+            route_bindings: Vec::new(),
+            partial: false,
+            duration_ms: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+        };
+
+        let report = analyze_controller_reachability(&request, &result);
+
+        assert!(report.symbols.iter().any(|symbol| {
+            symbol.kind == "model_relationship"
+                && symbol.symbol == "App\\Models\\Invoice::customer"
+                && symbol.reachable_from_runtime
+        }));
+        assert!(!report.findings.iter().any(|finding| {
+            finding.category == "unused_model_relationship"
+                && finding.symbol == "App\\Models\\Invoice::customer"
+        }));
+        assert!(report.findings.iter().any(|finding| {
+            finding.category == "unused_model_relationship"
+                && finding.symbol == "App\\Models\\Invoice::legacyNotes"
         }));
     }
 }
