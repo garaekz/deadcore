@@ -7,7 +7,7 @@ fn fixture_path(path: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn reports_unused_model_relationship() {
+fn reports_reachable_model_relationship_symbol() {
     let request = std::fs::read(fixture_path(
         "test/fixtures/contracts/deadcode/model-relationships.json",
     ))
@@ -44,9 +44,6 @@ fn reports_unused_model_relationship() {
     let symbols = payload["symbols"]
         .as_array()
         .expect("symbols should be an array");
-    let findings = payload["findings"]
-        .as_array()
-        .expect("findings should be an array");
 
     assert!(
         symbols.iter().any(|symbol| {
@@ -57,6 +54,46 @@ fn reports_unused_model_relationship() {
         "expected reachable model relationship symbol, payload: {}",
         payload
     );
+}
+
+#[test]
+fn reports_unused_model_relationship_finding() {
+    let request = std::fs::read(fixture_path(
+        "test/fixtures/contracts/deadcode/model-relationships.json",
+    ))
+    .expect("request fixture should exist");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_deadcore"))
+        .args(["--request", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn deadcore");
+
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should be piped")
+        .write_all(&request)
+        .expect("failed to write request fixture");
+
+    let output = child
+        .wait_with_output()
+        .expect("failed to wait for deadcore");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid json");
+    assert_eq!(payload["status"], "ok");
+
+    let findings = payload["findings"]
+        .as_array()
+        .expect("findings should be an array");
 
     assert!(
         findings.iter().any(|finding| {
