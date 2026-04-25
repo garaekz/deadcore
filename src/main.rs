@@ -155,7 +155,6 @@ fn execute_manifest_mode(manifest_path: &Path, args: &Args) -> Result<(), CliErr
     }
     validate_manifest(&manifest)?;
     apply_cache_dir_override(args.cache_dir.as_deref());
-    warn_if_ignoring_stdin(args);
 
     let result = analyze_project(&manifest)
         .map_err(|err| CliError::internal("failed to run rust pipeline", err.to_string()))?;
@@ -177,7 +176,6 @@ fn execute_request_mode(request_path: &Path, args: &Args) -> Result<(), CliError
         })?;
     validate_manifest(&request.manifest)?;
     apply_cache_dir_override(args.cache_dir.as_deref());
-    warn_if_ignoring_stdin(args);
 
     let result = analyze_project(&request.manifest)
         .map_err(|err| CliError::internal("failed to run rust pipeline", err.to_string()))?;
@@ -263,32 +261,6 @@ fn apply_cache_dir_override(cache_dir: Option<&Path>) {
             std::env::set_var("DEADCORE_CACHE_DIR", cache_dir);
         }
     }
-}
-
-fn warn_if_ignoring_stdin(args: &Args) {
-    if io::stdin().is_terminal() || !should_log(args.log_level, LogLevel::Warn) {
-        return;
-    }
-
-    match (&args.manifest, &args.request) {
-        (_, Some(path)) if path != Path::new("-") => {
-            print_warning(
-                args,
-                "stdin input detected but --request is set; ignoring stdin",
-            );
-        }
-        (Some(path), None) if path != Path::new("-") => {
-            print_warning(
-                args,
-                "stdin input detected but --manifest is set; ignoring stdin",
-            );
-        }
-        _ => {}
-    }
-}
-
-fn print_warning(args: &Args, message: &str) {
-    log_message(args, LogLevel::Warn, message);
 }
 
 fn log_pipeline_summary(args: &Args, manifest: &Manifest, result: &PipelineResult) {
