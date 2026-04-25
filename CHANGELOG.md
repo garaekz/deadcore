@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.5 - 2026-04-25
+
+- clean public docs and remove stale legacy fork schemas from the repository surface
+- clarify the current `deadcore` architecture around `deadcode.analysis.v1`
+- keep analysis behavior unchanged from `v0.1.4`
+
 ## v0.1.4 - 2026-04-23
 
 Corrective preview release for end-user binary distribution.

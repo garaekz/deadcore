@@ -1,6 +1,6 @@
 # Release
 
-`deadcore` is released at `v0.1.4` with these public surfaces treated as stable:
+`deadcore` is released at `v0.1.5` with these public surfaces treated as stable:
 
 - CLI `deadcore --request ...`
 - machine contract `deadcode.analysis.v1`
@@ -19,7 +19,7 @@ Pre-release checklist:
 4. Confirm the output payload has `contractVersion: "deadcode.analysis.v1"`, `findings`, and `removalPlan`
 5. Confirm `README.md`, `docs/release.md`, and `CHANGELOG.md` match the current public surface
 6. Confirm the release workflow matrix still matches the intended supported targets
-7. Tag `v0.1.4`
+7. Tag `v0.1.5`
 8. Publish the GitHub release from that tag
 
 Release asset contract:

@@ -1,8 +1,8 @@
 [package]
 name = "deadcore"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
-description = "Rust analysis core for Laravel dead code detection"
+description = "Rust analysis core for evidence-based Laravel dead code pruning"
 
 [[bin]]
 name = "deadcore"

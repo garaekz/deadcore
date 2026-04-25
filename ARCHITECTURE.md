@@ -1,47 +1,51 @@
-# Oxinfer Architecture
+# deadcore Architecture
 
-`oxinfer` is a single Rust crate rooted at this repository. The old Go pipeline is gone; the production runtime is the Rust binary built from [Cargo.toml](/Users/garaekz/Documents/projects/go/oxinfer/Cargo.toml).
+`deadcore` is a Rust analysis engine for Laravel dead code pruning. It reads a runtime-aware request from `deadcode-laravel`, parses PHP source with tree-sitter, builds a conservative reachability model, and emits deterministic `deadcode.analysis.v1` JSON.
 
 ## Flow
 
 ```text
 CLI
-  -> manifest or request loader
-  -> filesystem discovery
-  -> parse-once worker pipeline
-  -> route extraction + Laravel matchers
-  -> grouped delta or AnalysisResponse contract
+  -> request loader
+  -> manifest and runtime snapshot normalization
+  -> deterministic PHP file discovery
+  -> tree-sitter parse pipeline
+  -> symbol extraction and reachability expansion
+  -> findings and removal-plan assembly
+  -> deadcode.analysis.v1 JSON output
 ```
 
-The key design rule is parse once per file. Matchers and route resolution consume the same in-memory tree instead of reparsing source in later phases.
+The key design rule is evidence before deletion. `deadcore` can report broader dead-code candidates than it can safely remove; removal plans are emitted only when the engine has an isolated source range and a supported category.
 
 ## Modules
 
-- [src/main.rs](/Users/garaekz/Documents/projects/go/oxinfer/src/main.rs): CLI entrypoint, stdin/file handling, exit codes, output routing.
-- [src/manifest.rs](/Users/garaekz/Documents/projects/go/oxinfer/src/manifest.rs): manifest decoding and path resolution.
-- [src/discovery.rs](/Users/garaekz/Documents/projects/go/oxinfer/src/discovery.rs): deterministic PHP file discovery.
-- [src/parser.rs](/Users/garaekz/Documents/projects/go/oxinfer/src/parser.rs): tree-sitter PHP integration.
-- [src/routes.rs](/Users/garaekz/Documents/projects/go/oxinfer/src/routes.rs): Laravel route extraction and controller binding.
-- [src/matchers.rs](/Users/garaekz/Documents/projects/go/oxinfer/src/matchers.rs): HTTP status, request usage, resources, scopes, pivots, polymorphic relations, and broadcast extraction.
-- [src/pipeline.rs](/Users/garaekz/Documents/projects/go/oxinfer/src/pipeline.rs): Rayon-backed orchestration and reduction.
-- [src/output.rs](/Users/garaekz/Documents/projects/go/oxinfer/src/output.rs): manifest-mode delta assembly.
-- [src/contracts.rs](/Users/garaekz/Documents/projects/go/oxinfer/src/contracts.rs): `oxcribe.oxinfer.v2` request/response contract.
+- `src/main.rs`: CLI entrypoint, request handling, output routing, and exit codes.
+- `src/contracts.rs`: `deadcode.analysis.v1` request and response types.
+- `src/manifest.rs`: manifest decoding and path resolution.
+- `src/discovery.rs`: deterministic PHP file discovery.
+- `src/parser.rs`: tree-sitter PHP integration.
+- `src/source_index.rs`: source indexing and range lookup.
+- `src/reachability.rs`: symbol graph and reachability expansion.
+- `src/deadcode_model.rs`: dead-code symbols, findings, evidence, and removal plans.
+- `src/routes.rs` and `src/matchers.rs`: Laravel-specific source extraction helpers retained for supported framework patterns.
 
 ## Concurrency
 
 - Discovery is serial and deterministic.
-- Analysis fans out by file using Rayon workers.
-- Results are reduced back into sorted collections before serialization.
-- Output stays byte-stable across runs so fixture goldens remain exact.
+- Parsing and extraction fan out by file where safe.
+- Results are reduced into sorted collections before serialization.
+- Output stays byte-stable enough for fixture and contract tests.
 
 ## Tests
 
-- [tests/fixture_smoke.rs](/Users/garaekz/Documents/projects/go/oxinfer/tests/fixture_smoke.rs): end-to-end manifest smoke tests over Laravel fixtures.
-- [tests/routes_smoke.rs](/Users/garaekz/Documents/projects/go/oxinfer/tests/routes_smoke.rs): route extraction coverage.
-- [tests/request_mode_smoke.rs](/Users/garaekz/Documents/projects/go/oxinfer/tests/request_mode_smoke.rs): contract-mode golden parity.
+- `tests/*_reachability_smoke.rs` cover supported Laravel surfaces.
+- `tests/deadcode_contract_smoke.rs` guards the request/response contract.
+- `test/fixtures/contracts/deadcode/*.json` are request-mode fixtures.
+- `test/fixtures/integration/deadcode-*` are focused Laravel sample projects.
 
 ## Design Intent
 
-- Remove Go-era orchestration overhead.
-- Keep the public contract stable while the internals stay Rust-native.
-- Favor explicit data models and one-pass extraction over layered reparsing.
+- Keep static analysis native and fast.
+- Keep Laravel runtime truth outside the engine.
+- Prefer conservative, explainable findings over broad unsafe deletion.
+- Let `deadcode-laravel` own installation, reports, staging, and rollback.
