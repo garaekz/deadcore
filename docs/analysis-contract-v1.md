@@ -1,6 +1,8 @@
-# Oxcribe Oxinfer Contract V1
+# Legacy Oxcribe Oxinfer Contract V1
 
-This document defines the strict machine contract between `oxcribe` and `oxinfer`.
+Legacy note: this document is retained only as historical Oxinfer contract reference. It is not the active `deadcore` analysis contract; current public output is `deadcode.analysis.v1`.
+
+This document defines the legacy machine contract between `oxcribe` and `oxinfer`.
 
 `oxcribe` owns the Laravel runtime snapshot. `oxinfer` owns the static analysis. The join key is `actionKey = FQCN::method`.
 

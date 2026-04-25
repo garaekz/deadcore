@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Legacy Oxinfer schema retained for historical contract reference; not the active deadcore deadcode.analysis.v1 contract.",
   "$id": "https://oxcribe.dev/schema/analysis-response-v2.schema.json",
   "title": "Oxinfer Analysis Response V2",
   "type": "object",

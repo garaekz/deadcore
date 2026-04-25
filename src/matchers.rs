@@ -767,7 +767,9 @@ fn method_uses_eloquent_attribute_make(
     namespace: &str,
     imports: &BTreeMap<String, String>,
 ) -> bool {
-    if method.text.contains("\\Illuminate\\Database\\Eloquent\\Casts\\Attribute::make")
+    if method
+        .text
+        .contains("\\Illuminate\\Database\\Eloquent\\Casts\\Attribute::make")
         || method
             .text
             .contains("Illuminate\\Database\\Eloquent\\Casts\\Attribute::make")

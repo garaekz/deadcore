@@ -1,4 +1,5 @@
 {
+  "_comment": "Legacy Oxinfer diagnostic codes retained for historical contract reference; not the active deadcore deadcode.analysis.v1 contract.",
   "contractVersion": "oxcribe.oxinfer.v2",
   "diagnostics": [
     {

@@ -11,8 +11,7 @@ use crate::deadcode_model::{
     FINDING_CATEGORY_UNUSED_MODEL_METHOD, FINDING_CATEGORY_UNUSED_MODEL_MUTATOR,
     FINDING_CATEGORY_UNUSED_MODEL_RELATIONSHIP, FINDING_CATEGORY_UNUSED_MODEL_SCOPE,
     FINDING_CATEGORY_UNUSED_POLICY_CLASS, FINDING_CATEGORY_UNUSED_RESOURCE_CLASS,
-    FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding, ReasonRecord,
-    SYMBOL_KIND_COMMAND_CLASS,
+    FINDING_CATEGORY_UNUSED_SUBSCRIBER_CLASS, Finding, ReasonRecord, SYMBOL_KIND_COMMAND_CLASS,
     SYMBOL_KIND_CONTROLLER_CLASS, SYMBOL_KIND_CONTROLLER_METHOD, SYMBOL_KIND_FORM_REQUEST_CLASS,
     SYMBOL_KIND_JOB_CLASS, SYMBOL_KIND_LISTENER_CLASS, SYMBOL_KIND_MODEL_ACCESSOR,
     SYMBOL_KIND_MODEL_METHOD, SYMBOL_KIND_MODEL_MUTATOR, SYMBOL_KIND_MODEL_RELATIONSHIP,
@@ -2539,9 +2538,12 @@ fn collect_explicitly_written_model_attributes_from_text(
     model_mutators: &BTreeMap<String, BTreeSet<String>>,
     implicit_model_fqcn: Option<&str>,
 ) {
-    for (model_fqcn, attribute_name) in
-        extract_written_model_attributes_from_text(text, source_class, model_mutators, implicit_model_fqcn)
-    {
+    for (model_fqcn, attribute_name) in extract_written_model_attributes_from_text(
+        text,
+        source_class,
+        model_mutators,
+        implicit_model_fqcn,
+    ) {
         reachable_model_mutators.insert(format!("{model_fqcn}::{attribute_name}"));
     }
 }
@@ -2608,9 +2610,10 @@ fn extract_read_model_attributes_from_text(
         );
     }
 
-    let serialize_re =
-        Regex::new(r#"\$([A-Za-z_][A-Za-z0-9_]*)->(toArray|attributesToArray|toJson|jsonSerialize)\s*\("#)
-            .expect("model serialization regex");
+    let serialize_re = Regex::new(
+        r#"\$([A-Za-z_][A-Za-z0-9_]*)->(toArray|attributesToArray|toJson|jsonSerialize)\s*\("#,
+    )
+    .expect("model serialization regex");
     for captures in serialize_re.captures_iter(text) {
         let Some(variable_name) = captures.get(1) else {
             continue;
@@ -2980,7 +2983,12 @@ fn register_model_attributes_from_argument_arrays(
 ) {
     for argument in split_top_level(argument_text, ',') {
         for attribute_name in extract_php_array_attribute_keys(&argument) {
-            register_model_attribute_reference(called, model_attributes, model_fqcn, &attribute_name);
+            register_model_attribute_reference(
+                called,
+                model_attributes,
+                model_fqcn,
+                &attribute_name,
+            );
         }
     }
 }

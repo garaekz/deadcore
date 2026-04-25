@@ -53,85 +53,41 @@ jobs:
           cargo build --locked --release --target "${{ matrix.target }}"
           mkdir -p dist
           tag="${GITHUB_REF_NAME}"
-          asset="oxinfer_${tag}_${{ matrix.asset_os }}_${{ matrix.asset_arch }}${{ matrix.ext }}"
-          cp "target/${{ matrix.target }}/release/oxinfer${{ matrix.ext }}" "dist/${asset}"
+          asset="deadcore_${tag}_${{ matrix.asset_os }}_${{ matrix.asset_arch }}${{ matrix.ext }}"
+          cp "target/${{ matrix.target }}/release/deadcore${{ matrix.ext }}" "dist/${asset}"
 
       - name: Smoke release artifact
         shell: bash
         run: |
           set -euo pipefail
-          asset="oxinfer_${GITHUB_REF_NAME}_${{ matrix.asset_os }}_${{ matrix.asset_arch }}${{ matrix.ext }}"
-          smoke_dir="${RUNNER_TEMP}/oxinfer-smoke-${{ matrix.asset_os }}-${{ matrix.asset_arch }}"
-          manifest_path="${smoke_dir}/minimal.cache.manifest.json"
-          cache_dir="${smoke_dir}/cache"
-          cold_output="${smoke_dir}/cold.json"
-          warm_output="${smoke_dir}/warm.json"
-          cold_stderr="${smoke_dir}/cold.stderr"
-          warm_stderr="${smoke_dir}/warm.stderr"
+          asset="deadcore_${GITHUB_REF_NAME}_${{ matrix.asset_os }}_${{ matrix.asset_arch }}${{ matrix.ext }}"
+          smoke_dir="${RUNNER_TEMP}/deadcore-smoke-${{ matrix.asset_os }}-${{ matrix.asset_arch }}"
+          request_path="test/fixtures/contracts/deadcode/controller-basic.json"
+          output_path="${smoke_dir}/analysis.json"
 
           rm -rf "${smoke_dir}"
-          mkdir -p "${smoke_dir}" "${cache_dir}"
+          mkdir -p "${smoke_dir}"
 
-          python - <<'PY' "${manifest_path}"
+          "dist/${asset}" --request "${request_path}" --out "${output_path}"
+
+          python - <<'PY' "${output_path}"
           import json
           import pathlib
           import sys
 
-          manifest_path = pathlib.Path(sys.argv[1])
-          repo_root = pathlib.Path.cwd()
-          source_manifest = repo_root / "fixtures" / "minimal.manifest.json"
-          manifest = json.loads(source_manifest.read_text())
-          manifest["project"]["root"] = str((repo_root / "test" / "fixtures" / "integration" / "minimal-laravel").resolve())
-          manifest["cache"] = {
-              "enabled": True,
-              "kind": "sha256+mtime",
-          }
-          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-          PY
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
 
-          "dist/${asset}" --manifest "${manifest_path}" --cache-dir "${cache_dir}" --out "${cold_output}" --log-level info 2> "${cold_stderr}"
-          "dist/${asset}" --manifest "${manifest_path}" --cache-dir "${cache_dir}" --out "${warm_output}" --log-level info 2> "${warm_stderr}"
+          if payload.get("contractVersion") != "deadcode.analysis.v1":
+              raise SystemExit("release smoke did not emit deadcode.analysis.v1")
 
-          python - <<'PY' "${cold_output}" "${warm_output}" "${cold_stderr}" "${warm_stderr}"
-          import json
-          import pathlib
-          import re
-          import sys
-
-          cold_output = pathlib.Path(sys.argv[1])
-          warm_output = pathlib.Path(sys.argv[2])
-          cold_stderr = pathlib.Path(sys.argv[3]).read_text()
-          warm_stderr = pathlib.Path(sys.argv[4]).read_text()
-
-          def normalized_payload(path: pathlib.Path) -> dict:
-              payload = json.loads(path.read_text())
-              payload.get("meta", {}).get("stats", {}).pop("durationMs", None)
-              return payload
-
-          if normalized_payload(cold_output) != normalized_payload(warm_output):
-              raise SystemExit("warm cache output differed from cold cache output")
-
-          pattern = re.compile(r"cache=(\d+) hit\(s\), (\d+) miss\(es\)")
-          cold_match = pattern.search(cold_stderr)
-          warm_match = pattern.search(warm_stderr)
-
-          if cold_match is None or warm_match is None:
-              raise SystemExit("cache smoke logs did not include cache hit/miss stats")
-
-          cold_hits, cold_misses = map(int, cold_match.groups())
-          warm_hits, warm_misses = map(int, warm_match.groups())
-
-          if cold_hits != 0 or cold_misses == 0:
-              raise SystemExit(f"unexpected cold cache stats: hits={cold_hits} misses={cold_misses}")
-
-          if warm_hits == 0 or warm_misses != 0:
-              raise SystemExit(f"unexpected warm cache stats: hits={warm_hits} misses={warm_misses}")
+          if "findings" not in payload or "removalPlan" not in payload:
+              raise SystemExit("release smoke output is missing deadcode analysis fields")
           PY
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: oxinfer-${{ matrix.asset_os }}-${{ matrix.asset_arch }}
+          name: deadcore-${{ matrix.asset_os }}-${{ matrix.asset_arch }}
           path: dist/*
 
   publish:
