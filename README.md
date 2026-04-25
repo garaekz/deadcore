@@ -50,6 +50,8 @@ cargo run -- --request test/fixtures/contracts/deadcode/model-relationships.json
 cargo run -- --request test/fixtures/contracts/deadcode/model-attributes.json
 ```
 
+See [docs/fixtures.md](docs/fixtures.md) for the fixture map and output checks.
+
 Build a release binary:
 
 ```bash
