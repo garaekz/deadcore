@@ -4,7 +4,7 @@
   "runtimeFingerprint": "fp-deadcode-model-relationships",
   "manifest": {
     "project": {
-      "root": "C:\\Users\\garae\\.config\\superpowers\\worktrees\\laravel-dead-code-detector\\execute-phase1\\repos\\deadcore\\test\\fixtures\\integration\\deadcode-model-relationships",
+      "root": "test/fixtures/integration/deadcode-model-relationships",
       "composer": "composer.json"
     },
     "scan": {
@@ -19,7 +19,7 @@
   },
   "runtime": {
     "app": {
-      "basePath": "C:\\Users\\garae\\.config\\superpowers\\worktrees\\laravel-dead-code-detector\\execute-phase1\\repos\\deadcore\\test\\fixtures\\integration\\deadcode-model-relationships",
+      "basePath": "test/fixtures/integration/deadcode-model-relationships",
       "laravelVersion": "12.0.0",
       "phpVersion": "8.3.0",
       "appEnv": "testing"

@@ -579,12 +579,48 @@ pub fn load_analysis_request_from_slice(
     if request.contract_version != CONTRACT_VERSION {
         bail!("analysis request validation failed: unsupported contractVersion");
     }
-    if let Some(path) = source_path {
-        request.manifest.resolve_paths(path);
-    }
+    let source_anchor = source_path.unwrap_or_else(|| Path::new("deadcore-request.json"));
+    request.manifest.resolve_paths(source_anchor);
+    resolve_runtime_base_path(&mut request, source_anchor);
     request.normalize();
     validate_request_business_rules(&request)?;
     Ok(request)
+}
+
+fn resolve_runtime_base_path(request: &mut AnalysisRequest, source_path: &Path) {
+    let base_path = Path::new(&request.runtime.app.base_path);
+    if base_path.is_absolute() {
+        return;
+    }
+
+    let base_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
+    let resolved = base_dir.join(base_path);
+    if resolved.exists() {
+        request.runtime.app.base_path = absolutize_path(resolved).to_string_lossy().to_string();
+
+        return;
+    }
+
+    if let Ok(cwd) = std::env::current_dir() {
+        let cwd_relative = cwd.join(base_path);
+        if cwd_relative.exists() {
+            request.runtime.app.base_path = cwd_relative.to_string_lossy().to_string();
+
+            return;
+        }
+    }
+
+    request.runtime.app.base_path = absolutize_path(resolved).to_string_lossy().to_string();
+}
+
+fn absolutize_path(path: std::path::PathBuf) -> std::path::PathBuf {
+    if path.is_absolute() {
+        return path;
+    }
+
+    std::env::current_dir()
+        .map(|cwd| cwd.join(&path))
+        .unwrap_or(path)
 }
 
 pub fn build_deadcode_response(

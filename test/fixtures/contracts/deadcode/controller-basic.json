@@ -4,7 +4,7 @@
   "runtimeFingerprint": "fp-deadcode-controller-basic",
   "manifest": {
     "project": {
-      "root": "C:\\Users\\garae\\.config\\superpowers\\worktrees\\laravel-dead-code-detector\\execute-phase1\\repos\\deadcore\\test\\fixtures\\integration\\deadcode-basic",
+      "root": "test/fixtures/integration/deadcode-basic",
       "composer": "composer.json"
     },
     "scan": {
@@ -19,7 +19,7 @@
   },
   "runtime": {
     "app": {
-      "basePath": "C:\\Users\\garae\\.config\\superpowers\\worktrees\\laravel-dead-code-detector\\execute-phase1\\repos\\deadcore\\test\\fixtures\\integration\\deadcode-basic",
+      "basePath": "test/fixtures/integration/deadcode-basic",
       "laravelVersion": "12.0.0",
       "phpVersion": "8.3.0",
       "appEnv": "testing"

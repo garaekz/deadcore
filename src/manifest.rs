@@ -119,14 +119,27 @@ fn resolve_path(base_dir: &Path, path: &Path) -> PathBuf {
         return path.to_path_buf();
     }
 
-    if path.exists() {
-        return path.to_path_buf();
+    let resolved = base_dir.join(path);
+    if resolved.exists() {
+        return absolutize(resolved);
     }
 
-    let manifest_relative = base_dir.join(path);
-    if manifest_relative.exists() {
-        return manifest_relative;
+    if let Ok(cwd) = std::env::current_dir() {
+        let cwd_relative = cwd.join(path);
+        if cwd_relative.exists() {
+            return cwd_relative;
+        }
     }
 
-    manifest_relative
+    absolutize(resolved)
+}
+
+fn absolutize(path: PathBuf) -> PathBuf {
+    if path.is_absolute() {
+        return path;
+    }
+
+    std::env::current_dir()
+        .map(|cwd| cwd.join(&path))
+        .unwrap_or(path)
 }
